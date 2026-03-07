@@ -1,0 +1,60 @@
+INSERT_DEDUP_AUDIT = """
+INSERT INTO wp11.dedup_audit (
+    candidate_raw_id, matched_attack_id, similarity_score, rule_name, decision, reviewer_name
+)
+VALUES (
+    %(candidate_raw_id)s, %(matched_attack_id)s, %(similarity_score)s, %(rule_name)s, %(decision)s, %(reviewer_name)s
+)
+RETURNING
+    audit_id, candidate_raw_id, matched_attack_id, similarity_score, rule_name, decision, reviewer_name, created_at
+"""
+
+LIST_DEDUP_REVIEW_ITEMS = """
+SELECT
+    audit_id, candidate_raw_id, matched_attack_id, similarity_score, rule_name, decision, reviewer_name, created_at
+FROM wp11.dedup_audit
+WHERE decision = 'review'
+ORDER BY created_at DESC
+LIMIT %(limit)s
+"""
+
+ENQUEUE_BOM_RESOLUTION = """
+INSERT INTO wp11.bom_resolution_queue (
+    attack_id, raw_id, mentioned_name, mentioned_vendor, mentioned_version, reason_code, queue_status
+)
+VALUES (
+    %(attack_id)s, %(raw_id)s, %(mentioned_name)s, %(mentioned_vendor)s, %(mentioned_version)s, %(reason_code)s, 'open'
+)
+RETURNING
+    queue_id, attack_id, raw_id, mentioned_name, mentioned_vendor, mentioned_version, reason_code,
+    queue_status, resolved_component_id, created_at, resolved_at
+"""
+
+LIST_OPEN_BOM_QUEUE = """
+SELECT
+    queue_id, attack_id, raw_id, mentioned_name, mentioned_vendor, mentioned_version, reason_code,
+    queue_status, resolved_component_id, created_at, resolved_at
+FROM wp11.bom_resolution_queue
+WHERE queue_status = 'open'
+ORDER BY created_at DESC
+LIMIT %(limit)s
+"""
+
+RESOLVE_BOM_QUEUE_ITEM = """
+UPDATE wp11.bom_resolution_queue
+SET queue_status = 'resolved', resolved_component_id = %(resolved_component_id)s, resolved_at = now()
+WHERE queue_id = %(queue_id)s
+RETURNING
+    queue_id, attack_id, raw_id, mentioned_name, mentioned_vendor, mentioned_version, reason_code,
+    queue_status, resolved_component_id, created_at, resolved_at
+"""
+
+REJECT_BOM_QUEUE_ITEM = """
+UPDATE wp11.bom_resolution_queue
+SET queue_status = 'rejected', resolved_at = NULL, resolved_component_id = NULL
+WHERE queue_id = %(queue_id)s
+RETURNING
+    queue_id, attack_id, raw_id, mentioned_name, mentioned_vendor, mentioned_version, reason_code,
+    queue_status, resolved_component_id, created_at, resolved_at
+"""
+
