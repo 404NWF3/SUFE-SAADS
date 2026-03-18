@@ -372,6 +372,7 @@ CREATE TABLE IF NOT EXISTS wp11.ai_component (
     component_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     component_code      VARCHAR(40) NOT NULL UNIQUE,
     component_name      VARCHAR(160) NOT NULL,
+    component_layer     VARCHAR(40) NULL,
     vendor_name         VARCHAR(120) NULL,
     component_type      VARCHAR(40) NOT NULL,
     modality            VARCHAR(30) NULL,
@@ -386,6 +387,25 @@ CREATE TABLE IF NOT EXISTS wp11.ai_component (
     CONSTRAINT ck_ai_component_lifecycle
         CHECK (lifecycle_status IN ('active','deprecated','retired'))
 );
+
+ALTER TABLE wp11.ai_component
+    ADD COLUMN IF NOT EXISTS component_layer VARCHAR(40) NULL;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'ck_ai_component_layer'
+          AND connamespace = 'wp11'::regnamespace
+    ) THEN
+        ALTER TABLE wp11.ai_component
+            ADD CONSTRAINT ck_ai_component_layer
+            CHECK (component_layer IS NULL OR component_layer IN (
+                'vendor_platform', 'model_family', 'framework', 'plugin', 'runtime', 'vector_stack'
+            ));
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_ai_component_type_vendor
     ON wp11.ai_component (component_type, vendor_name);
@@ -404,11 +424,25 @@ CREATE TABLE IF NOT EXISTS wp11.ai_component_alias (
         FOREIGN KEY (component_id)
         REFERENCES wp11.ai_component (component_id)
         ON DELETE CASCADE,
-    CONSTRAINT uq_component_alias_normalized
-        UNIQUE (normalized_alias),
     CONSTRAINT ck_component_alias_type
         CHECK (alias_type IN ('vendor','common','package','research_name'))
 );
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'uq_component_alias_normalized'
+          AND connamespace = 'wp11'::regnamespace
+    ) THEN
+        ALTER TABLE wp11.ai_component_alias
+            DROP CONSTRAINT uq_component_alias_normalized;
+    END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_component_alias_component_normalized
+    ON wp11.ai_component_alias (component_id, normalized_alias);
 
 CREATE INDEX IF NOT EXISTS idx_component_alias_component_id
     ON wp11.ai_component_alias (component_id);
@@ -435,13 +469,28 @@ CREATE TABLE IF NOT EXISTS wp11.attack_component_impact (
         FOREIGN KEY (component_id)
         REFERENCES wp11.ai_component (component_id)
         ON DELETE RESTRICT,
-    CONSTRAINT ck_component_impact_match_mode
-        CHECK (match_mode IN ('exact','range','vendor_fallback','major_only')),
     CONSTRAINT ck_component_impact_scope
         CHECK (impact_scope IN ('direct','indirect','runtime','supply_chain')),
     CONSTRAINT ck_component_impact_confidence
         CHECK (confidence_score >= 0 AND confidence_score <= 1)
 );
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'ck_component_impact_match_mode'
+          AND connamespace = 'wp11'::regnamespace
+    ) THEN
+        ALTER TABLE wp11.attack_component_impact
+            DROP CONSTRAINT ck_component_impact_match_mode;
+    END IF;
+END $$;
+
+ALTER TABLE wp11.attack_component_impact
+    ADD CONSTRAINT ck_component_impact_match_mode
+    CHECK (match_mode IN ('exact','alias','trigram','embedding','range','vendor_fallback','major_only'));
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_attack_component_impact_dedup
     ON wp11.attack_component_impact (

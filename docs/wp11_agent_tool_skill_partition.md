@@ -31,7 +31,9 @@
 - 读取 runtime context
 - 决定 run mode
 - 生成 collection plan
-- 设定 source priority / target taxonomy / query expansion
+- 设定 source priority / target taxonomy / query strategy
+- 为不同 source 指定 broad recall / precision probe / weak-signal probe 检索意图
+- 约束 query reflection 的轮数、预算与停止条件
 
 输入：
 - coverage snapshot
@@ -43,52 +45,76 @@
 输出：
 - `CollectionPlan`
 
-### 2.2 CveIntelCollectorAgent
+### 2.2 SearchReflectionAgent
+职责：
+- 读取 query telemetry 与 source yield summary
+- 由大模型判断“recall 不足 / precision 不足 / 噪声过大 / source 语法不匹配 / novelty 饱和”
+- 生成 narrower / broader / source-specific rewrite
+- 生成 corroboration / component-anchored / taxonomy-anchored rewrite
+- 决定是否继续补采、切换 source 或终止本轮检索
+- 输出结构化 reflection 审计与 expected gain 方向
+
+### 2.3 CveIntelCollectorAgent
 职责：
 - 面向 NVD / CISA KEV / MITRE ATT&CK 抓结构化漏洞与战术信息
 
-### 2.3 CodeSecurityCollectorAgent
+### 2.4 CodeSecurityCollectorAgent
 职责：
 - 面向 GitHub Security Advisories / Issues / Discussions / repos 抓 PoC 与公告
 
-### 2.4 PaperIntelCollectorAgent
+### 2.5 PaperIntelCollectorAgent
 职责：
 - 面向 arXiv / HuggingFace papers / vendor reports 抓论文与技术报告
 
-### 2.5 CommunitySignalCollectorAgent
+### 2.6 CommunitySignalCollectorAgent
 职责：
 - 面向 Reddit / Hacker News / GitHub Discussions 采集讨论与求助帖
 
-### 2.6 StandardizerAgent
+### 2.7 StandardizerAgent
 职责：
 - 把异构源转换为统一情报对象
 - 生成 STIX payload
 - 提取 taxonomy / CVSS hints / BOM mentions
 
-### 2.7 DedupMergeAgent
+### 2.8 DedupMergeAgent
 职责：
 - 执行多级去重与归并
 - 处理“叙事相似但 BOM 不同”的合并策略
 
-### 2.8 BomMapperAgent
+### 2.9 DedupAdjudicatorAgent
+职责：
+- 对 `semantic_dedup_and_merge` 的初始判断做二次审查
+- 复核 `new / merge / review` 是否正确
+- 在“叙事相似但 BOM 不同”时优先保护组件差异，不做冒进合并
+
+### 2.10 BomMapperAgent
 职责：
 - 抽取 AI BOM mentions
 - 组件实体解析
 - unresolved 入 queue
 
-### 2.9 CoverageAnalystAgent
+### 2.11 BomResolutionReviewerAgent
+职责：
+- 对 AI BOM 解析结果执行二次审查
+- 判断 accept / revise / review_queue
+- 审查 vendor、version、component mapping 是否合理
+
+### 2.12 CoverageAnalystAgent
 职责：
 - 读取覆盖率
-- 计算 gap score
-- 生成 targeted query expansion
+- 计算 multi-dimensional gap score
+- 分析 `taxonomy x source x component_family` 覆盖盲区
+- 分析 `vendor_or_model_family x source x taxonomy` 覆盖盲区
+- 生成 targeted sources / targeted query sets / expected evidence type
+- 判断 gap_fill 是否值得回流到采集环
 
-### 2.10 WeakSignalMinerAgent
+### 2.13 WeakSignalMinerAgent
 职责：
 - 对讨论数据聚类
 - 检测 burst
 - 识别攻击前兆
 
-### 2.11 AlertReviewerAgent
+### 2.14 AlertReviewerAgent
 职责：
 - 判断是否需要发出高危告警
 - 过滤低质量弱信号
@@ -142,6 +168,11 @@ def fetch_cisa_kev(max_results: int = 100) -> list[dict]: ...
 def fetch_mitre_attack_updates(keyword: str | None = None, max_results: int = 100) -> list[dict]: ...
 ```
 
+### `fetch_vendor_advisories`
+```python
+def fetch_vendor_advisories(vendor: str, query: str | None = None, max_results: int = 50) -> list[dict]: ...
+```
+
 ## 3.2 Parsing / Normalization Tools
 
 ### `clean_raw_content`
@@ -186,19 +217,24 @@ def compute_content_hash(content: str) -> str: ...
 def generate_embedding(text: str) -> list[float]: ...
 ```
 
-### `query_chroma_similar_raw`
+### `query_qdrant_similar_raw`
 ```python
-def query_chroma_similar_raw(text: str, top_k: int = 5) -> list[dict]: ...
+def query_qdrant_similar_raw(text: str, top_k: int = 5) -> list[dict]: ...
 ```
 
-### `query_chroma_similar_attack`
+### `query_qdrant_similar_attack`
 ```python
-def query_chroma_similar_attack(text: str, top_k: int = 5) -> list[dict]: ...
+def query_qdrant_similar_attack(text: str, top_k: int = 5) -> list[dict]: ...
 ```
 
-### `upsert_chroma_attack_signature`
+### `upsert_qdrant_attack_signature`
 ```python
-def upsert_chroma_attack_signature(attack_id: str, text: str, metadata: dict) -> None: ...
+def upsert_qdrant_attack_signature(attack_id: str, text: str, metadata: dict) -> None: ...
+```
+
+### `query_qdrant_semantic_candidates`
+```python
+def query_qdrant_semantic_candidates(text: str, top_k: int = 10) -> list[dict]: ...
 ```
 
 ### `decide_dedup_merge`
@@ -245,6 +281,53 @@ def compute_gap_scores(coverage_rows: list[dict], target_baseline: dict[str, int
 def expand_gap_fill_queries(taxonomy_code: str, attack_family: str | None = None) -> list[str]: ...
 ```
 
+### `build_source_specific_queries`
+```python
+def build_source_specific_queries(
+    source_name: str,
+    intent: str,
+    seed_terms: list[str],
+    component_terms: list[str] | None = None,
+) -> list[str]: ...
+```
+
+### `analyze_query_outcomes`
+```python
+def analyze_query_outcomes(query_runs: list[dict]) -> dict: ...
+```
+
+### `rewrite_queries_with_feedback`
+```python
+def rewrite_queries_with_feedback(
+    source_name: str,
+    query_runs: list[dict],
+    target_taxonomy: str | None = None,
+) -> list[dict]: ...
+```
+
+### `compute_multi_dimensional_gap_scores`
+```python
+def compute_multi_dimensional_gap_scores(
+    coverage_rows: list[dict],
+    source_rows: list[dict],
+    component_rows: list[dict],
+) -> list[dict]: ...
+```
+
+### `compute_vendor_model_gap_scores`
+```python
+def compute_vendor_model_gap_scores(
+    vendor_rows: list[dict],
+    source_rows: list[dict],
+    taxonomy_rows: list[dict],
+) -> list[dict]: ...
+```
+
+### `estimate_gap_fill_roi`
+```python
+def estimate_gap_fill_roi(gap: dict, candidate_sources: list[dict]) -> dict: ...
+```
+
 ### `cluster_weak_signals`
 ```python
 def cluster_weak_signals(posts: list[dict]) -> list[dict]: ...
@@ -282,6 +365,11 @@ def resolve_bom_via_db(attack_id: str, mentions: list[dict], raw_id: str | None 
 def refresh_coverage_materialized_view() -> None: ...
 ```
 
+### `store_query_telemetry_via_db`
+```python
+def store_query_telemetry_via_db(run_id: str, query_runs: list[dict]) -> list[str]: ...
+```
+
 ## 4. Skill 列表
 
 Skill 不是底层函数。Skill 是“流程经验包”。
@@ -295,7 +383,19 @@ Skill 不是底层函数。Skill 是“流程经验包”。
 - `IntelSupervisorAgent`
 - `CoverageAnalystAgent`
 
-### 4.2 `attack-standardization-playbook`
+### 4.2 `search-reflection-loop`
+用途：
+- 为 LLM reflection 提供 telemetry、source summary、query feedback memory、source templates
+- 由 LLM 主导判断 recall 不足、precision 不足、source mismatch、novelty 饱和
+- 生成 broader / narrower / source-specific / corroboration rewrite
+- 规定最大反思轮数、停止条件、预算约束和降级护栏
+
+适合调用者：
+- `IntelSupervisorAgent`
+- `SearchReflectionAgent`
+- `CoverageAnalystAgent`
+
+### 4.3 `attack-standardization-playbook`
 用途：
 - 指导如何把原始文本整理成标准攻击对象
 - 包含字段抽取顺序、缺失字段补全策略、证据规范
@@ -303,22 +403,35 @@ Skill 不是底层函数。Skill 是“流程经验包”。
 适合调用者：
 - `StandardizerAgent`
 
-### 4.3 `dedup-adjudication-playbook`
+### 4.4 `dedup-adjudication-playbook`
 用途：
 - 指导“new / merge / review”的判定
 - 明确 BOM 差异场景如何处理
 
 适合调用者：
 - `DedupMergeAgent`
+- `DedupAdjudicatorAgent`
 
-### 4.4 `ai-bom-resolution-playbook`
+### 4.5 `ai-bom-resolution-playbook`
 用途：
 - 指导 BOM mention 抽取、vendor 推断、版本规范化、冲突判定
 
 适合调用者：
 - `BomMapperAgent`
+- `BomResolutionReviewerAgent`
 
-### 4.5 `weak-signal-triage`
+### 4.6 `coverage-gap-fill-playbook`
+用途：
+- 定义 `taxonomy x source x component_family` 三维缺口分析方法
+- 定义 `vendor_or_model_family x source x taxonomy` 缺口分析方法
+- 规定何时执行 targeted gap fill、何时停止追采
+- 给出 expected evidence type 与优先 source 模板
+
+适合调用者：
+- `IntelSupervisorAgent`
+- `CoverageAnalystAgent`
+
+### 4.7 `weak-signal-triage`
 用途：
 - 分析社区求助帖是否像新攻击前兆
 - 检查是否只是普通 bug / 配置错误 / 使用问题
@@ -327,7 +440,7 @@ Skill 不是底层函数。Skill 是“流程经验包”。
 - `WeakSignalMinerAgent`
 - `AlertReviewerAgent`
 
-### 4.6 `high-risk-alert-review`
+### 4.8 `high-risk-alert-review`
 用途：
 - 审查是否触发高危告警
 - 要求 evidence density、source diversity、BOM relevance 达阈值
@@ -338,11 +451,11 @@ Skill 不是底层函数。Skill 是“流程经验包”。
 ## 5. 最终建议的划分表
 
 - `子Agent`
-  - 计划、分析、归并、审查、弱信号判断
+  - 计划、检索反思、归并、二次审查、覆盖率分析、弱信号判断、审查
 - `Tool`
-  - HTTP 抓取、embedding、检索、hash、DB 调用、视图读取
+  - HTTP 抓取、embedding、向量检索、query telemetry、gap 计算、DB 调用、视图读取
 - `Skill`
-  - query expansion、标准化、去重裁决、BOM 解析、弱信号研判、告警审查
+  - query expansion、search reflection、coverage gap fill、标准化、去重裁决、BOM 解析、弱信号研判、告警审查
 
 ## 6. 一个简单判断口诀
 

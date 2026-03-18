@@ -1,0 +1,81 @@
+from __future__ import annotations
+
+import os
+from typing import Any, Literal
+
+from langchain_core.prompts import ChatPromptTemplate
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
+
+
+class _StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class LlmDedupAdjudicationResult(_StrictModel):
+    final_decision: Literal["new", "merge", "review"]
+    matched_attack_id: str | None = None
+    rationale: list[str] = Field(default_factory=list)
+    risk_notes: list[str] = Field(default_factory=list)
+
+
+class LangChainLlmDedupAdjudicator:
+    def __init__(
+        self,
+        *,
+        model: str = "gpt-5-mini",
+        temperature: float = 0.0,
+        base_url: str | None = None,
+        api_key: str | None = None,
+    ) -> None:
+        self.model = model
+        self.temperature = temperature
+        self.base_url = (
+            base_url or os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL")
+        )
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+
+    def is_available(self) -> bool:
+        return bool(self.api_key)
+
+    def validate_connectivity(self) -> None:
+        if not self.is_available():
+            raise RuntimeError(
+                "LLM dedup adjudication requested but OPENAI_API_KEY is not configured."
+            )
+
+    def adjudicate(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.validate_connectivity()
+        from langchain_openai import ChatOpenAI
+
+        llm = ChatOpenAI(
+            model=self.model,
+            temperature=self.temperature,
+            base_url=self.base_url,
+            api_key=SecretStr(self.api_key) if self.api_key else None,
+        )
+        structured_llm = llm.with_structured_output(LlmDedupAdjudicationResult)
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "你是去重审查专家。你不负责召回，只负责审查系统对 new/merge/review 的判断。"
+                    "如果语义相似高但 BOM 差异显著，优先 review。"
+                    "如果 semantic/rerank/taxonomy 支持强且无明显 BOM 冲突，可 merge。"
+                    "输出结构化结果，不要输出多余解释。",
+                ),
+                (
+                    "user",
+                    "candidate_attack_code={candidate_attack_code}\n"
+                    "system_decision={system_decision}\n"
+                    "top_k_candidates={top_k_candidates}\n"
+                    "best_signals={best_signals}\n",
+                ),
+            ]
+        )
+        chain = prompt | structured_llm
+        result = chain.invoke(payload)
+        if isinstance(result, LlmDedupAdjudicationResult):
+            return result.model_dump(mode="python")
+        return LlmDedupAdjudicationResult.model_validate(result).model_dump(
+            mode="python"
+        )

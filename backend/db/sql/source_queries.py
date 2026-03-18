@@ -16,6 +16,22 @@ FROM wp11.intel_source
 WHERE enabled = TRUE
 """
 
+UPSERT_INTEL_SOURCE = """
+INSERT INTO wp11.intel_source (
+    source_name, source_type, base_uri, trust_level, default_qps, enabled
+)
+VALUES (
+    %(source_name)s, %(source_type)s, %(base_uri)s, %(trust_level)s, %(default_qps)s, %(enabled)s
+)
+ON CONFLICT (source_name) DO UPDATE SET
+    source_type = EXCLUDED.source_type,
+    base_uri = EXCLUDED.base_uri,
+    trust_level = EXCLUDED.trust_level,
+    default_qps = EXCLUDED.default_qps,
+    enabled = EXCLUDED.enabled
+RETURNING source_id, source_name, source_type, base_uri, trust_level, default_qps, enabled, created_at
+"""
+
 CREATE_COLLECTION_TASK = """
 INSERT INTO wp11.collection_task (
     source_id, task_mode, trigger_type, task_status, scheduled_at, created_by, retry_count, trace_id
@@ -113,4 +129,3 @@ def build_update_collection_task_status_query(
         task_id, source_id, task_mode, trigger_type, task_status, scheduled_at, started_at, finished_at,
         created_by, retry_count, trace_id
     """
-

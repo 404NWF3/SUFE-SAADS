@@ -11,6 +11,7 @@ import pytest
 psycopg = pytest.importorskip("psycopg")
 
 from db.unit_of_work import UnitOfWork
+from db.services.component_seed_service import AiComponentSeedService
 
 
 @pytest.fixture(scope="session")
@@ -23,7 +24,12 @@ def integration_dsn() -> str:
 
 @pytest.fixture(scope="session", autouse=True)
 def ensure_schema(integration_dsn: str) -> None:
-    schema_path = Path(__file__).resolve().parents[3] / "backend" / "db" / "wp11_postgresql_schema.sql"
+    schema_path = (
+        Path(__file__).resolve().parents[3]
+        / "backend"
+        / "db"
+        / "wp11_postgresql_schema.sql"
+    )
     schema_sql = schema_path.read_text(encoding="utf-8")
     with psycopg.connect(integration_dsn, autocommit=True) as conn:
         with conn.cursor() as cur:
@@ -286,3 +292,18 @@ def test_read_model_feed_and_mv_refresh(db_conn) -> None:
     assert any(str(row.attack_id) == str(attack.attack_id) for row in feed)
     assert any(row.taxonomy_code == "LLM01" for row in owasp_rows)
 
+
+def test_component_seed_bootstrap_populates_aliases(db_conn) -> None:
+    with UnitOfWork(conn=db_conn) as uow:
+        report = AiComponentSeedService(uow).bootstrap()
+        alias_match = uow.components.find_component_by_alias("chatgptapi")
+        transformers_match = uow.components.find_component_by_alias(
+            "transformerslibrary"
+        )
+
+    assert report["seeded_components"] >= 10
+    assert report["seeded_aliases"] >= report["seeded_components"]
+    assert alias_match is not None
+    assert alias_match.component_name == "OpenAI API"
+    assert transformers_match is not None
+    assert transformers_match.component_name == "HuggingFace Transformers"

@@ -21,20 +21,33 @@ def normalize_component_alias(alias: str, vendor_name: str | None = None) -> str
 
 class ComponentRepository(BaseRepository):
     def get_component_by_code(self, component_code: str) -> AiComponent | None:
-        row = self._fetch_one(q.GET_COMPONENT_BY_CODE, {"component_code": component_code})
-        return self._row_to_model(AiComponent, row)
-
-    def get_component_by_name(self, component_name: str) -> AiComponent | None:
-        row = self._fetch_one(q.GET_COMPONENT_BY_NAME, {"component_name": component_name})
-        return self._row_to_model(AiComponent, row)
-
-    def find_component_by_alias(self, normalized_alias: str) -> AiComponent | None:
         row = self._fetch_one(
-            q.GET_COMPONENT_BY_NORMALIZED_ALIAS, {"normalized_alias": normalized_alias}
+            q.GET_COMPONENT_BY_CODE, {"component_code": component_code}
         )
         return self._row_to_model(AiComponent, row)
 
-    def search_component_alias(self, normalized_alias: str, limit: int = 10) -> list[dict[str, Any]]:
+    def get_component_by_name(self, component_name: str) -> AiComponent | None:
+        row = self._fetch_one(
+            q.GET_COMPONENT_BY_NAME, {"component_name": component_name}
+        )
+        return self._row_to_model(AiComponent, row)
+
+    def find_component_by_alias(self, normalized_alias: str) -> AiComponent | None:
+        matches = self.list_components_by_alias(normalized_alias)
+        if len(matches) != 1:
+            return None
+        return matches[0]
+
+    def list_components_by_alias(self, normalized_alias: str) -> list[AiComponent]:
+        rows = self._fetch_all(
+            q.LIST_COMPONENTS_BY_NORMALIZED_ALIAS,
+            {"normalized_alias": normalized_alias},
+        )
+        return [AiComponent(**row) for row in rows]
+
+    def search_component_alias(
+        self, normalized_alias: str, limit: int = 10
+    ) -> list[dict[str, Any]]:
         return self._fetch_all(
             q.SEARCH_COMPONENT_ALIAS,
             {"normalized_alias": normalized_alias, "limit": limit},
@@ -47,6 +60,7 @@ class ComponentRepository(BaseRepository):
         component_name: str,
         vendor_name: str | None,
         component_type: str,
+        component_layer: str | None = None,
         modality: str | None = None,
         purl: str | None = None,
         homepage_uri: str | None = None,
@@ -57,6 +71,7 @@ class ComponentRepository(BaseRepository):
             {
                 "component_code": component_code,
                 "component_name": component_name,
+                "component_layer": component_layer,
                 "vendor_name": vendor_name,
                 "component_type": component_type,
                 "modality": modality,
@@ -65,7 +80,40 @@ class ComponentRepository(BaseRepository):
                 "lifecycle_status": lifecycle_status,
             },
         )
-        return self._require_model(AiComponent, row, message="Failed to create ai_component")
+        return self._require_model(
+            AiComponent, row, message="Failed to create ai_component"
+        )
+
+    def upsert_component(
+        self,
+        *,
+        component_code: str,
+        component_name: str,
+        vendor_name: str | None,
+        component_type: str,
+        component_layer: str | None = None,
+        modality: str | None = None,
+        purl: str | None = None,
+        homepage_uri: str | None = None,
+        lifecycle_status: str = "active",
+    ) -> AiComponent:
+        row = self._fetch_one(
+            q.UPSERT_COMPONENT,
+            {
+                "component_code": component_code,
+                "component_name": component_name,
+                "component_layer": component_layer,
+                "vendor_name": vendor_name,
+                "component_type": component_type,
+                "modality": modality,
+                "purl": purl,
+                "homepage_uri": homepage_uri,
+                "lifecycle_status": lifecycle_status,
+            },
+        )
+        return self._require_model(
+            AiComponent, row, message="Failed to upsert ai_component"
+        )
 
     def insert_component_alias(
         self,
@@ -77,7 +125,9 @@ class ComponentRepository(BaseRepository):
         vendor_name: str | None = None,
         is_preferred: bool = False,
     ) -> AiComponentAlias:
-        normalized_alias = normalized_alias or normalize_component_alias(alias_name, vendor_name)
+        normalized_alias = normalized_alias or normalize_component_alias(
+            alias_name, vendor_name
+        )
         row = self._fetch_one(
             q.INSERT_COMPONENT_ALIAS,
             {
@@ -88,7 +138,36 @@ class ComponentRepository(BaseRepository):
                 "is_preferred": is_preferred,
             },
         )
-        return self._require_model(AiComponentAlias, row, message="Failed to insert component alias")
+        return self._require_model(
+            AiComponentAlias, row, message="Failed to insert component alias"
+        )
+
+    def upsert_component_alias(
+        self,
+        *,
+        component_id: str,
+        alias_name: str,
+        alias_type: str,
+        normalized_alias: str | None = None,
+        vendor_name: str | None = None,
+        is_preferred: bool = False,
+    ) -> AiComponentAlias:
+        normalized_alias = normalized_alias or normalize_component_alias(
+            alias_name, vendor_name
+        )
+        row = self._fetch_one(
+            q.UPSERT_COMPONENT_ALIAS,
+            {
+                "component_id": component_id,
+                "alias_name": alias_name,
+                "alias_type": alias_type,
+                "normalized_alias": normalized_alias,
+                "is_preferred": is_preferred,
+            },
+        )
+        return self._require_model(
+            AiComponentAlias, row, message="Failed to upsert component alias"
+        )
 
     def list_component_aliases(self, component_id: str) -> list[AiComponentAlias]:
         rows = self._fetch_all(q.LIST_COMPONENT_ALIASES, {"component_id": component_id})
@@ -120,14 +199,23 @@ class ComponentRepository(BaseRepository):
             },
         )
         return self._require_model(
-            AttackComponentImpact, row, message="Failed to upsert attack_component_impact"
+            AttackComponentImpact,
+            row,
+            message="Failed to upsert attack_component_impact",
         )
 
-    def list_component_impacts_by_attack(self, attack_id: str) -> list[AttackComponentImpact]:
-        rows = self._fetch_all(q.LIST_COMPONENT_IMPACTS_BY_ATTACK, {"attack_id": attack_id})
+    def list_component_impacts_by_attack(
+        self, attack_id: str
+    ) -> list[AttackComponentImpact]:
+        rows = self._fetch_all(
+            q.LIST_COMPONENT_IMPACTS_BY_ATTACK, {"attack_id": attack_id}
+        )
         return [AttackComponentImpact(**row) for row in rows]
 
-    def list_attacks_by_component(self, component_id: str) -> list[AttackComponentImpact]:
-        rows = self._fetch_all(q.LIST_ATTACKS_BY_COMPONENT, {"component_id": component_id})
+    def list_attacks_by_component(
+        self, component_id: str
+    ) -> list[AttackComponentImpact]:
+        rows = self._fetch_all(
+            q.LIST_ATTACKS_BY_COMPONENT, {"component_id": component_id}
+        )
         return [AttackComponentImpact(**row) for row in rows]
-

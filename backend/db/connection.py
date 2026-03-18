@@ -6,12 +6,14 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Iterator
 
+from dotenv import load_dotenv
+
 from .exceptions import ConnectionInitError
 
 _SCHEMA_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 _POOL: Any | None = None
-_SETTINGS: "DatabaseSettings" | None = None
+_SETTINGS: "DatabaseSettings | None" = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -37,9 +39,13 @@ class DatabaseSettings:
         if self.port <= 0:
             raise ConnectionInitError("POSTGRES_PORT must be > 0")
         if self.min_size <= 0 or self.max_size <= 0:
-            raise ConnectionInitError("POSTGRES_MIN_SIZE and POSTGRES_MAX_SIZE must be > 0")
+            raise ConnectionInitError(
+                "POSTGRES_MIN_SIZE and POSTGRES_MAX_SIZE must be > 0"
+            )
         if self.min_size > self.max_size:
-            raise ConnectionInitError("POSTGRES_MIN_SIZE cannot be larger than POSTGRES_MAX_SIZE")
+            raise ConnectionInitError(
+                "POSTGRES_MIN_SIZE cannot be larger than POSTGRES_MAX_SIZE"
+            )
         if self.connect_timeout <= 0:
             raise ConnectionInitError("POSTGRES_CONNECT_TIMEOUT must be > 0")
         if self.statement_timeout_ms <= 0:
@@ -49,6 +55,7 @@ class DatabaseSettings:
 
     @classmethod
     def from_env(cls) -> "DatabaseSettings":
+        load_dotenv()
         return cls(
             dsn=os.getenv("POSTGRES_DSN"),
             host=os.getenv("POSTGRES_HOST", "localhost"),
@@ -60,7 +67,9 @@ class DatabaseSettings:
             min_size=int(os.getenv("POSTGRES_MIN_SIZE", "1")),
             max_size=int(os.getenv("POSTGRES_MAX_SIZE", "10")),
             connect_timeout=int(os.getenv("POSTGRES_CONNECT_TIMEOUT", "5")),
-            statement_timeout_ms=int(os.getenv("POSTGRES_STATEMENT_TIMEOUT_MS", "30000")),
+            statement_timeout_ms=int(
+                os.getenv("POSTGRES_STATEMENT_TIMEOUT_MS", "30000")
+            ),
             application_name=os.getenv("POSTGRES_APPLICATION_NAME", "saads-db"),
         )
 
@@ -100,7 +109,8 @@ def init_pool(
     def _configure_connection(conn: Any) -> None:
         with conn.cursor() as cur:
             cur.execute(f"SET search_path TO {settings.schema}, public")
-            cur.execute("SET statement_timeout = %s", (settings.statement_timeout_ms,))
+            cur.execute(f"SET statement_timeout = {int(settings.statement_timeout_ms)}")
+        conn.commit()
 
     try:
         pool = ConnectionPool(

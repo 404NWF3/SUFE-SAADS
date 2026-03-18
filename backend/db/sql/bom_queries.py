@@ -1,6 +1,6 @@
 GET_COMPONENT_BY_CODE = """
 SELECT
-    component_id, component_code, component_name, vendor_name, component_type, modality,
+    component_id, component_code, component_name, component_layer, vendor_name, component_type, modality,
     purl, homepage_uri, lifecycle_status, created_at
 FROM wp11.ai_component
 WHERE component_code = %(component_code)s
@@ -8,7 +8,7 @@ WHERE component_code = %(component_code)s
 
 GET_COMPONENT_BY_NAME = """
 SELECT
-    component_id, component_code, component_name, vendor_name, component_type, modality,
+    component_id, component_code, component_name, component_layer, vendor_name, component_type, modality,
     purl, homepage_uri, lifecycle_status, created_at
 FROM wp11.ai_component
 WHERE lower(component_name) = lower(%(component_name)s)
@@ -16,14 +16,37 @@ WHERE lower(component_name) = lower(%(component_name)s)
 
 CREATE_COMPONENT = """
 INSERT INTO wp11.ai_component (
-    component_code, component_name, vendor_name, component_type, modality, purl, homepage_uri, lifecycle_status
+    component_code, component_name, component_layer, vendor_name, component_type, modality, purl, homepage_uri, lifecycle_status
 )
 VALUES (
-    %(component_code)s, %(component_name)s, %(vendor_name)s, %(component_type)s, %(modality)s,
+    %(component_code)s, %(component_name)s, %(component_layer)s, %(vendor_name)s, %(component_type)s, %(modality)s,
     %(purl)s, %(homepage_uri)s, %(lifecycle_status)s
 )
 RETURNING
-    component_id, component_code, component_name, vendor_name, component_type, modality,
+    component_id, component_code, component_name, component_layer, vendor_name, component_type, modality,
+    purl, homepage_uri, lifecycle_status, created_at
+"""
+
+UPSERT_COMPONENT = """
+INSERT INTO wp11.ai_component (
+    component_code, component_name, component_layer, vendor_name, component_type, modality, purl, homepage_uri, lifecycle_status
+)
+VALUES (
+    %(component_code)s, %(component_name)s, %(component_layer)s, %(vendor_name)s, %(component_type)s, %(modality)s,
+    %(purl)s, %(homepage_uri)s, %(lifecycle_status)s
+)
+ON CONFLICT (component_code)
+DO UPDATE SET
+    component_name = EXCLUDED.component_name,
+    component_layer = EXCLUDED.component_layer,
+    vendor_name = EXCLUDED.vendor_name,
+    component_type = EXCLUDED.component_type,
+    modality = EXCLUDED.modality,
+    purl = EXCLUDED.purl,
+    homepage_uri = EXCLUDED.homepage_uri,
+    lifecycle_status = EXCLUDED.lifecycle_status
+RETURNING
+    component_id, component_code, component_name, component_layer, vendor_name, component_type, modality,
     purl, homepage_uri, lifecycle_status, created_at
 """
 
@@ -37,6 +60,21 @@ VALUES (
 RETURNING alias_id, component_id, alias_name, alias_type, normalized_alias, is_preferred
 """
 
+UPSERT_COMPONENT_ALIAS = """
+INSERT INTO wp11.ai_component_alias (
+    component_id, alias_name, alias_type, normalized_alias, is_preferred
+)
+VALUES (
+    %(component_id)s, %(alias_name)s, %(alias_type)s, %(normalized_alias)s, %(is_preferred)s
+)
+ON CONFLICT (component_id, normalized_alias)
+DO UPDATE SET
+    alias_name = EXCLUDED.alias_name,
+    alias_type = EXCLUDED.alias_type,
+    is_preferred = EXCLUDED.is_preferred
+RETURNING alias_id, component_id, alias_name, alias_type, normalized_alias, is_preferred
+"""
+
 LIST_COMPONENT_ALIASES = """
 SELECT alias_id, component_id, alias_name, alias_type, normalized_alias, is_preferred
 FROM wp11.ai_component_alias
@@ -46,24 +84,35 @@ ORDER BY is_preferred DESC, alias_id ASC
 
 GET_COMPONENT_BY_NORMALIZED_ALIAS = """
 SELECT
-    ac.component_id, ac.component_code, ac.component_name, ac.vendor_name, ac.component_type, ac.modality,
+    ac.component_id, ac.component_code, ac.component_name, ac.component_layer, ac.vendor_name, ac.component_type, ac.modality,
     ac.purl, ac.homepage_uri, ac.lifecycle_status, ac.created_at
 FROM wp11.ai_component_alias a
 JOIN wp11.ai_component ac ON ac.component_id = a.component_id
 WHERE a.normalized_alias = %(normalized_alias)s
-LIMIT 1
+ORDER BY a.is_preferred DESC, ac.component_name ASC
 """
+
+LIST_COMPONENTS_BY_NORMALIZED_ALIAS = GET_COMPONENT_BY_NORMALIZED_ALIAS
 
 SEARCH_COMPONENT_ALIAS = """
 SELECT
     a.alias_id,
     a.component_id,
+    ac.component_code,
+    ac.component_name,
+    ac.component_layer,
+    ac.vendor_name,
+    ac.component_type,
+    ac.modality,
+    ac.purl,
+    ac.homepage_uri,
     a.alias_name,
     a.alias_type,
     a.normalized_alias,
     a.is_preferred,
     similarity(a.normalized_alias, %(normalized_alias)s) AS similarity
 FROM wp11.ai_component_alias a
+JOIN wp11.ai_component ac ON ac.component_id = a.component_id
 WHERE a.normalized_alias %% %(normalized_alias)s
 ORDER BY similarity DESC, a.is_preferred DESC
 LIMIT %(limit)s
@@ -108,4 +157,3 @@ FROM wp11.attack_component_impact
 WHERE component_id = %(component_id)s
 ORDER BY confidence_score DESC, created_at DESC
 """
-

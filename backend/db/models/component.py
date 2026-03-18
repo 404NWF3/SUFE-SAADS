@@ -11,6 +11,7 @@ class AiComponent:
     component_id: UUID
     component_code: str
     component_name: str
+    component_layer: str | None
     vendor_name: str | None
     component_type: str
     modality: str | None
@@ -42,4 +43,3 @@ class AttackComponentImpact:
     confidence_score: Decimal
     evidence_uri: str | None
     created_at: datetime
-

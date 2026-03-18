@@ -29,6 +29,31 @@ class SourceRepository(BaseRepository):
         rows = self._fetch_all(query, params or None)
         return [IntelSource(**row) for row in rows]
 
+    def upsert_source(
+        self,
+        *,
+        source_name: str,
+        source_type: str,
+        base_uri: str,
+        trust_level: int,
+        default_qps: float,
+        enabled: bool = True,
+    ) -> IntelSource:
+        row = self._fetch_one(
+            q.UPSERT_INTEL_SOURCE,
+            {
+                "source_name": source_name,
+                "source_type": source_type,
+                "base_uri": base_uri,
+                "trust_level": trust_level,
+                "default_qps": default_qps,
+                "enabled": enabled,
+            },
+        )
+        return self._require_model(
+            IntelSource, row, message="Failed to upsert intel_source"
+        )
+
     def create_collection_task(
         self,
         *,
@@ -158,19 +183,25 @@ class SourceRepository(BaseRepository):
         )
         if row:
             return RawIntelRecord(**row)
-        existing = self.get_raw_record_by_hash(source_id=source_id, content_hash=content_hash)
+        existing = self.get_raw_record_by_hash(
+            source_id=source_id, content_hash=content_hash
+        )
         if existing is None:
             raise NotFoundError("raw_intel_record missing after idempotent insert")
         return existing
 
-    def get_raw_record_by_hash(self, *, source_id: str, content_hash: str) -> RawIntelRecord | None:
+    def get_raw_record_by_hash(
+        self, *, source_id: str, content_hash: str
+    ) -> RawIntelRecord | None:
         row = self._fetch_one(
             q.GET_RAW_BY_SOURCE_HASH,
             {"source_id": source_id, "content_hash": content_hash},
         )
         return self._row_to_model(RawIntelRecord, row)
 
-    def mark_raw_record_parser_status(self, *, raw_id: str, status: str) -> RawIntelRecord | None:
+    def mark_raw_record_parser_status(
+        self, *, raw_id: str, status: str
+    ) -> RawIntelRecord | None:
         row = self._fetch_one(
             q.MARK_RAW_PARSER_STATUS,
             {"raw_id": raw_id, "parser_status": status},

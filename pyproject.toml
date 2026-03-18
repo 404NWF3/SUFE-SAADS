@@ -5,43 +5,22 @@ description = "基于多智能体的 AI 系统态势感知与自动化防御系�
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    # --- LLM & Agent 框架 ---
     "langchain>=0.1.0",
     "langchain-openai>=0.0.5",
     "langchain-google-genai>=4.2.0",
     "langgraph>=0.2.0",
     "google-adk>=1.22.1",
-
-    # --- 数据验证 ---
     "pydantic>=2.0.0",
-
-    # --- HTTP & 解析 ---
     "httpx>=0.27.0",
     "beautifulsoup4>=4.12.0",
-
-    # --- 配置 ---
     "python-dotenv>=1.0.0",
-
-    # --- API 服务 ---
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
-
-    # --- 存储层: 向量数据库 ---
-    # Qdrant 客户端（含 AsyncQdrantClient + gRPC 支持）
     "qdrant-client>=1.13.0",
-    # LangChain × Qdrant 集成（QdrantVectorStore, hybrid search）
     "langchain-qdrant>=0.2.0",
-
-    # --- 存储层: 关系型数据库 ---
-    # SQLAlchemy async SQLite 驱动（sqlalchemy 本身已通过 fastapi 引入）
     "aiosqlite>=0.20.0",
-    # PostgreSQL 同步驱动与连接池（WP1-1 db 模块）
     "psycopg>=3.2.0",
     "psycopg_pool>=3.2.0",
-
-    # --- Embedding 模型（可选，本地推理） ---
-    # 使用 OpenAI Embeddings 时无需此包（langchain-openai 已含）
-    # 使用本地模型时取消注释:
     # "sentence-transformers>=3.0.0",
 ]
 
@@ -58,3 +37,8 @@ local-embed = [
 
 [project.scripts]
 saads = "main:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
