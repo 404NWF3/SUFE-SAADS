@@ -1,0 +1,26 @@
+name: aibom_uv_env_build_skill
+version: v1
+entrypoint: backend.agents.wp12_agents.skills.aibom_uv_env_build_skill.executor:run_aibom_uv_env_build_skill
+default_target_mode: uv_build
+input_schema: AIBOMEnvBuildRequest
+output_schema: AIBOMEnvBuildResult
+supports:
+  - blueprint_only
+  - uv_build
+  - uv_build_and_seed
+allowed_aux_services:
+  - component_candidate_provider
+  - bom_resolution_resolver
+  - seed_asset_loader
+  - command_runner
+collaboration:
+  upstream_agent: agent_one
+  direct_caller: agent_two
+  responsibility_split:
+    - agent_two assembles the request and decides what to build
+    - skill resolves, provisions, validates, and returns structured results
+boundaries:
+  - no_direct_sql
+  - no_task_selection
+  - no_full_attack_orchestration
+  - uv_only
