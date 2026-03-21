@@ -5,6 +5,74 @@ import { USE_MOCK_API } from "@/lib/api/client"
 import { MOCK_LOGS } from "@/lib/api/mock"
 import { WpLogEntrySchema, type WpLogEntry } from "@/lib/types/wp"
 
+/**
+ * 将后端 SSE 事件（{type, node, ts, ...}）或 mock 日志格式（{timestamp, level, ...}）
+ * 统一转换为 WpLogEntry。无法识别的事件返回 null（调用方跳过）。
+ */
+function toLogEntry(raw: unknown): WpLogEntry | null {
+  // 先尝试 mock / 直接兼容格式
+  const direct = WpLogEntrySchema.safeParse(raw)
+  if (direct.success) return direct.data
+
+  if (typeof raw !== "object" || raw === null) return null
+  const evt = raw as Record<string, unknown>
+  const ts =
+    typeof evt.ts === "string" ? evt.ts : new Date().toISOString()
+
+  switch (evt.type) {
+    case "init":
+      return {
+        timestamp: ts,
+        level: "INFO",
+        source: "系统",
+        message: `▶ 运行启动 — ${evt.run_id ?? "?"} (${evt.run_mode ?? "?"})`,
+      }
+    case "node_complete": {
+      const errCount = typeof evt.error_count === "number" ? evt.error_count : 0
+      const errSuffix = errCount > 0 ? ` ⚠ ${errCount} 个节点错误` : ""
+      return {
+        timestamp: ts,
+        level: errCount > 0 ? "WARN" : "INFO",
+        source: String(evt.display_name ?? evt.node ?? "节点"),
+        message: `完成 — ${evt.percent ?? 0}%${errSuffix}`,
+      }
+    }
+    case "node_detail":
+      return {
+        timestamp: ts,
+        level: "DEBUG",
+        source: String(evt.display_name ?? evt.node ?? "详情"),
+        message: String(evt.message ?? ""),
+      }
+    case "node_error_detail":
+      return {
+        timestamp: ts,
+        level: "ERROR",
+        source: String(evt.display_name ?? evt.node ?? "错误"),
+        message: String(evt.message ?? ""),
+      }
+    case "error":
+      return {
+        timestamp: ts,
+        level: "ERROR",
+        source: String(evt.node ?? "运行时错误"),
+        message: String(evt.message ?? "未知错误"),
+      }
+    case "done":
+      return {
+        timestamp: new Date().toISOString(),
+        level: evt.status === "succeeded" ? "INFO" : "WARN",
+        source: "系统",
+        message: `■ 运行结束 — ${evt.status ?? "unknown"} (${evt.percent ?? 0}%)`,
+      }
+    case "heartbeat":
+    case "idle":
+      return null
+    default:
+      return null
+  }
+}
+
 export type SSELogStatus =
   | "connecting"
   | "connected"
@@ -106,8 +174,8 @@ export function useSSELog(
       if (!mountedRef.current) return
       try {
         const raw: unknown = JSON.parse(evt.data as string)
-        const parsed = WpLogEntrySchema.safeParse(raw)
-        if (parsed.success) pushEntry(parsed.data)
+        const entry = toLogEntry(raw)
+        if (entry) pushEntry(entry)
       } catch {
         // ignore malformed frames
       }

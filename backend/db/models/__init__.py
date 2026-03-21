@@ -7,7 +7,7 @@ from .attack import (
     RemediationAdvice,
 )
 from .component import AiComponent, AiComponentAlias, AttackComponentImpact
-from .governance import BomResolutionQueueItem, DedupAudit
+from .governance import BomResolutionQueueItem, DedupAudit, QueryFeedbackLog
 from .source import CollectionTask, IntelSource, RawIntelRecord, SourceType
 from .views import (
     ComponentRiskOverviewRow,
@@ -34,6 +34,7 @@ __all__ = [
     "AttackComponentImpact",
     "DedupAudit",
     "BomResolutionQueueItem",
+    "QueryFeedbackLog",
     "PrimaryCvssView",
     "Wp12AttackFeedRow",
     "ComponentRiskOverviewRow",

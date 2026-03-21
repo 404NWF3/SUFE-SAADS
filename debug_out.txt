@@ -1,0 +1,3193 @@
+══════════════ SAADS WP1-1 Intel Pipeline – Step Debugger ══════════════
+
+▸ 运行配置
+  run_mode  : bootstrap
+  scenario  : normal — 标准 stub 运行，全节点顺序执行
+  gap_rounds: 1
+
+  run_id  : run_c5086115d2eb
+  trace_id: trace_d60f3359a3fb46dd
+
+────────────────────────────────────────────────────────────────────────
+
+✓ [01] load_runtime_context
+  run_mode:     "bootstrap"
+  run_status:     "running"
+  runtime_context:     {
+      "run_mode": "bootstrap",
+      "base_run_mode": "bootstrap",
+      "source_runtime_mode": "stub",
+      "planning_strategy": "llm_optional",
+      "coverage_strategy": "llm_optional",
+      "reflection_strategy": "llm_optional",
+      "standardization_strategy": "llm_optional",
+      "bom_resolution_strategy": "llm_optional",
+      "dedup_merge_strategy": "llm_optional",
+      "dedup_adjudication_strategy": "rules_only",
+      "llm_model": "qwen3.5-plus",
+      "llm_temperature": 0.0,
+      "validate_llm_online": false,
+      "source_registry": [
+        {
+          "source_name": "nvd",
+          "source_type": "structured",
+          "enabled": true,
+          "default_max_results": 5,
+          "default_time_window_days": 7
+        },
+        {
+          "source_name": "github_advisories",
+          "source_type": "code",
+          "enabled": true,
+          "default_max_results": 5,
+          "default_time_window_days": 7
+        },
+        {
+          "source_name": "arxiv",
+          "source_type": "paper",
+          "enabled": true,
+          "default_max_results": 5,
+          "default_time_window_days": 7
+        },
+        {
+          "source_name": "reddit",
+          "source_type": "community",
+          "enabled": true,
+          "default_max_results": 5,
+          "default_time_window_days": 7
+        },
+        {
+          "source_name": "hackernews",
+          "source_type": "community",
+          "enabled": true,
+          "default_max_results": 5,
+          "default_time_window_days": 7
+        },
+        {
+          "source_name": "cisa_kev",
+          "source_type": "advisory",
+          "enabled": true,
+          "default_max_results": 5,
+          "default_time_window_days": 7
+        },
+        {
+          "source_name": "mitre_attack",
+          "source_type": "structured",
+          "enabled": true,
+          "default_max_results": 5,
+          "default_time_window_days": 7
+        }
+      ],
+      "coverage_snapshot": [
+        {
+          "taxonomy_code": "OWASP-LLM-01",
+          "attack_count": 0
+        },
+        {
+          "taxonomy_code": "OWASP-LLM-02",
+          "attack_count": 0
+        }
+      ],
+      "vendor_model_coverage_rows": [],
+      "recent_attacks_summary": [],
+      "source_quality_rows": [
+        {
+          "source_name": "nvd",
+          "trust_level": 0.95
+        },
+        {
+          "source_name": "github_advisories",
+          "trust_level": 0.9
+        }
+      ],
+      "query_feedback_rows": [],
+      "gap_fill_dispatch_plans": [],
+      "coverage_feedback_rows": [],
+      "weak_signal_summary": [],
+      "pending_queue_summary": {
+        "unresolved_bom": 0
+      },
+      "latest_ingested_query_run_ids": [],
+      "cursor_state": {},
+      "coverage_refreshed_at": null,
+      "coverage_min_roi_threshold": 0.65,
+      "coverage_max_gap_fill_plans": 3,
+      "coverage_max_gap_fill_rounds": 1,
+      "artifact_store_dir": ".runtime/wp11/raw_records",
+      "audit_store_dir": ".runtime/wp11/audit",
+      "dedup_store_dir": ".runtime/wp11/dedup",
+      "qdrant_local_path": ".runtime/wp11/vector_memory",
+      "qdrant_collection_name": "wp11_attack_signature_memory",
+      "payload_cleanup_removed": [],
+      "registry_alignment_report": {},
+      "persist_raw_records_to_db": false,
+      "prefer_db_source_registry": false,
+      "source_retry_attempts": 2,
+      "source_request_timeout_seconds": 20.0,
+      "source_health_drift_threshold": 0.5,
+      "payload_retention_days": 30,
+      "cleanup_expired_payloads": false,
+      "collection_task_mode": "fast",
+      "collection_trigger_type": "manual",
+      "collection_created_by": "phase2_collector",
+      "resume_policy": "full_restart",
+      "resume_from_node": null,
+      "replay_query_run_ids": [],
+      "skip_completed_nodes": false,
+      "failure_injection": {
+        "fail_once_nodes": [],
+        "always_fail_nodes": [],
+        "force_low_yield": false,
+        "force_gap_fill": false,
+        "force_no_results": false
+      }
+    }
+  0.2ms
+········································································
+
+✓ [02] supervisor_plan
+  collection_plan:     {
+      "run_mode": "bootstrap",
+      "rationale": "Supervisor heuristic plan generated from runtime context, source quality, and query feedback memory.",
+      "target_taxonomies": [
+        "OWASP-LLM-01",
+        "OWASP-LLM-02"
+      ],
+      "source_plans": [
+        {
+          "source_name": "nvd",
+          "source_type": "structured",
+          "priority": 1.0,
+          "queries": [
+            "prompt injection langchain"
+          ],
+          "query_intent": "broad_recall",
+          "query_provenance": "supervisor_heuristic_seed",
+          "rewrite_reason": null,
+          "max_results": 5,
+          "fetch_mode": "bootstrap",
+          "time_window_days": 7
+        },
+        {
+          "source_name": "github_advisories",
+          "source_type": "code",
+          "priority": 0.9,
+          "queries": [
+            "langchain prompt injection"
+          ],
+          "query_intent": "broad_recall",
+          "query_provenance": "supervisor_heuristic_seed",
+          "rewrite_reason": null,
+          "max_results": 5,
+          "fetch_mode": "bootstrap",
+          "time_window_days": 7
+        },
+        {
+          "source_name": "arxiv",
+          "source_type": "paper",
+          "priority": 0.8,
+          "queries": [
+            "prompt injection jailbreak language model"
+          ],
+          "query_intent": "evidence_corroboration",
+          "query_provenance": "supervisor_heuristic_seed",
+          "rewrite_reason": null,
+          "max_results": 5,
+          "fetch_mode": "bootstrap",
+          "time_window_days": 7
+        },
+        {
+          "source_name": "reddit",
+          "source_type": "community",
+          "priority": 0.7,
+          "queries": [
+            "LLM jailbreak"
+          ],
+          "query_intent": "weak_signal_probe",
+          "query_provenance": "supervisor_heuristic_seed",
+          "rewrite_reason": null,
+          "max_results": 5,
+          "fetch_mode": "weak_signal",
+          "time_window_days": 7
+        },
+        {
+          "source_name": "hackernews",
+          "source_type": "community",
+          "priority": 0.6,
+          "queries": [
+            "AI security vulnerability"
+          ],
+          "query_intent": "weak_signal_probe",
+          "query_provenance": "supervisor_heuristic_seed",
+          "rewrite_reason": null,
+          "max_results": 5,
+          "fetch_mode": "weak_signal",
+          "time_window_days": 7
+        },
+        {
+          "source_name": "cisa_kev",
+          "source_type": "advisory",
+          "priority": 0.5,
+          "queries": [
+            "langchain"
+          ],
+          "query_intent": "broad_recall",
+          "query_provenance": "supervisor_heuristic_seed",
+          "rewrite_reason": null,
+          "max_results": 5,
+          "fetch_mode": "bootstrap",
+          "time_window_days": 7
+        },
+        {
+          "source_name": "mitre_attack",
+          "source_type": "structured",
+          "priority": 0.3999999999999999,
+          "queries": [
+            "agent hijack"
+          ],
+          "query_intent": "broad_recall",
+          "query_provenance": "supervisor_heuristic_seed",
+          "rewrite_reason": null,
+          "max_results": 5,
+          "fetch_mode": "bootstrap",
+          "time_window_days": 7
+        }
+      ],
+      "weak_signal_focus_terms": [
+        "llm",
+        "prompt injection",
+        "jailbreak"
+      ],
+      "max_parallel_sources": 4,
+      "max_items_per_source": 10,
+      "max_reflection_rounds": 1,
+      "reflection_enabled": true
+    }
+  llm_planning_audits:     [
+      {
+        "strategy_requested": "llm_optional",
+        "strategy_executed": "rules_only_degraded",
+        "llm_model": "qwen3.5-plus",
+        "prompt_version": "v1.0-llm-supervisor-planner",
+        "plan_rationale": "Supervisor heuristic plan generated from runtime context, source quality, and query feedback memory.",
+        "source_plan_count": 7,
+        "target_taxonomy_count": 2,
+        "max_parallel_sources": 4,
+        "max_reflection_rounds": 1,
+        "confidence": 0.68,
+        "feedback_rows_used": 0,
+        "fallback_reason": "Error code: 400 - {'error': {'message': \"<400> InternalError.Algo.InvalidParameter: 'messages' must contain the word 'json' in some form, to use 'response_format' of type 'json_object'.\", 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_parameter_error'}, 'id': 'chatcmpl-b6567f7d-bbff-9698-b06c-499a2498607c', 'request_id': 'b6567f7d-bbff-9698-b06c-499a2498607c'}",
+        "invoked_at": "2026-03-20T07:08:02.836231+00:00"
+      }
+    ]
+  0.2ms
+········································································
+
+✓ [03] dispatch_collection
+  collector_plans:     {
+      "StructuredIntelCollector": [
+        {
+          "source_name": "nvd",
+          "source_type": "structured",
+          "priority": 1.0,
+          "queries": [
+            "prompt injection langchain"
+          ],
+          "query_intent": "broad_recall",
+          "query_provenance": "supervisor_heuristic_seed",
+          "rewrite_reason": null,
+          "max_results": 5,
+          "fetch_mode": "bootstrap",
+          "time_window_days": 7
+        },
+        {
+          "source_name": "mitre_attack",
+          "source_type": "structured",
+          "priority": 0.3999999999999999,
+          "queries": [
+            "agent hijack"
+          ],
+          "query_intent": "broad_recall",
+          "query_provenance": "supervisor_heuristic_seed",
+          "rewrite_reason": null,
+          "max_results": 5,
+          "fetch_mode": "bootstrap",
+          "time_window_days": 7
+        }
+      ],
+      "CodeSecurityCollector": [
+        {
+          "source_name": "github_advisories",
+          "source_type": "code",
+          "priority": 0.9,
+          "queries": [
+            "langchain prompt injection"
+          ],
+          "query_intent": "broad_recall",
+          "query_provenance": "supervisor_heuristic_seed",
+          "rewrite_reason": null,
+          "max_results": 5,
+          "fetch_mode": "bootstrap",
+          "time_window_days": 7
+        }
+      ],
+      "PaperIntelCollector": [
+        {
+          "source_name": "arxiv",
+          "source_type": "paper",
+          "priority": 0.8,
+          "queries": [
+            "prompt injection jailbreak language model"
+          ],
+          "query_intent": "evidence_corroboration",
+          "query_provenance": "supervisor_heuristic_seed",
+          "rewrite_reason": null,
+          "max_results": 5,
+          "fetch_mode": "bootstrap",
+          "time_window_days": 7
+        }
+      ],
+      "CommunitySignalCollector": [
+        {
+          "source_name": "reddit",
+          "source_type": "community",
+          "priority": 0.7,
+          "queries": [
+            "LLM jailbreak"
+          ],
+          "query_intent": "weak_signal_probe",
+          "query_provenance": "supervisor_heuristic_seed",
+          "rewrite_reason": null,
+          "max_results": 5,
+          "fetch_mode": "weak_signal",
+          "time_window_days": 7
+        },
+        {
+          "source_name": "hackernews",
+          "source_type": "community",
+          "priority": 0.6,
+          "queries": [
+            "AI security vulnerability"
+          ],
+          "query_intent": "weak_signal_probe",
+          "query_provenance": "supervisor_heuristic_seed",
+          "rewrite_reason": null,
+          "max_results": 5,
+          "fetch_mode": "weak_signal",
+          "time_window_days": 7
+        }
+      ],
+      "AdvisoryCollector": [
+        {
+          "source_name": "cisa_kev",
+          "source_type": "advisory",
+          "priority": 0.5,
+          "queries": [
+            "langchain"
+          ],
+          "query_intent": "broad_recall",
+          "query_provenance": "supervisor_heuristic_seed",
+          "rewrite_reason": null,
+          "max_results": 5,
+          "fetch_mode": "bootstrap",
+          "time_window_days": 7
+        }
+      ]
+    }
+  collection_coordination:     {
+      "engine": "fallback",
+      "crewai_available": false,
+      "collector_agents": [
+        {
+          "collector_role": "AdvisoryCollector",
+          "agent_name": "Advisory Collector Agent",
+          "assigned_sources": [
+            "cisa_kev"
+          ],
+          "execution_hints": [
+            "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded"
+          ],
+          "engine": "fallback"
+        },
+        {
+          "collector_role": "CodeSecurityCollector",
+          "agent_name": "Code Security Collector Agent",
+          "assigned_sources": [
+            "github_advisories"
+          ],
+          "execution_hints": [
+            "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded"
+          ],
+          "engine": "fallback"
+        },
+        {
+          "collector_role": "CommunitySignalCollector",
+          "agent_name": "Community Signal Collector Agent",
+          "assigned_sources": [
+            "reddit",
+            "hackernews"
+          ],
+          "execution_hints": [
+            "profile=weak_signal_scan | intent=weak_signal_probe | Prefer discussion language, symptom phrasing, and emerging chatter. | planning=rules_only_degraded",
+            "profile=weak_signal_scan | intent=weak_signal_probe | Prefer discussion language, symptom phrasing, and emerging chatter. | planning=rules_only_degraded"
+          ],
+          "engine": "fallback"
+        },
+        {
+          "collector_role": "PaperIntelCollector",
+          "agent_name": "Paper Intel Collector Agent",
+          "assigned_sources": [
+            "arxiv"
+          ],
+          "execution_hints": [
+            "profile=corroboration_pass | intent=evidence_corroboration | Seek confirmatory evidence and cross-source support. | planning=rules_only_degraded"
+          ],
+          "engine": "fallback"
+        },
+        {
+          "collector_role": "StructuredIntelCollector",
+          "agent_name": "Structured Intel Collector Agent",
+          "assigned_sources": [
+            "nvd",
+            "mitre_attack"
+          ],
+          "execution_hints": [
+            "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+            "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded"
+          ],
+          "engine": "fallback"
+        }
+      ],
+      "assignments": [
+        {
+          "source_name": "nvd",
+          "query_count": 1,
+          "query_intent": "broad_recall",
+          "priority": 1.0,
+          "collector_role": "StructuredIntelCollector",
+          "collector_agent": "StructuredIntelCollectorAgent",
+          "execution_profile": "broad_discovery",
+          "source_specific_hint": "Cast a broad but source-aware recall net.",
+          "execution_notes": "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null
+        },
+        {
+          "source_name": "github_advisories",
+          "query_count": 1,
+          "query_intent": "broad_recall",
+          "priority": 0.9,
+          "collector_role": "CodeSecurityCollector",
+          "collector_agent": "CodeSecurityCollectorAgent",
+          "execution_profile": "broad_discovery",
+          "source_specific_hint": "Cast a broad but source-aware recall net.",
+          "execution_notes": "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null
+        },
+        {
+          "source_name": "arxiv",
+          "query_count": 1,
+          "query_intent": "evidence_corroboration",
+          "priority": 0.8,
+          "collector_role": "PaperIntelCollector",
+          "collector_agent": "PaperIntelCollectorAgent",
+          "execution_profile": "corroboration_pass",
+          "source_specific_hint": "Seek confirmatory evidence and cross-source support.",
+          "execution_notes": "profile=corroboration_pass | intent=evidence_corroboration | Seek confirmatory evidence and cross-source support. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null
+        },
+        {
+          "source_name": "reddit",
+          "query_count": 1,
+          "query_intent": "weak_signal_probe",
+          "priority": 0.7,
+          "collector_role": "CommunitySignalCollector",
+          "collector_agent": "CommunitySignalCollectorAgent",
+          "execution_profile": "weak_signal_scan",
+          "source_specific_hint": "Prefer discussion language, symptom phrasing, and emerging chatter.",
+          "execution_notes": "profile=weak_signal_scan | intent=weak_signal_probe | Prefer discussion language, symptom phrasing, and emerging chatter. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null
+        },
+        {
+          "source_name": "hackernews",
+          "query_count": 1,
+          "query_intent": "weak_signal_probe",
+          "priority": 0.6,
+          "collector_role": "CommunitySignalCollector",
+          "collector_agent": "CommunitySignalCollectorAgent",
+          "execution_profile": "weak_signal_scan",
+          "source_specific_hint": "Prefer discussion language, symptom phrasing, and emerging chatter.",
+          "execution_notes": "profile=weak_signal_scan | intent=weak_signal_probe | Prefer discussion language, symptom phrasing, and emerging chatter. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null
+        },
+        {
+          "source_name": "cisa_kev",
+          "query_count": 1,
+          "query_intent": "broad_recall",
+          "priority": 0.5,
+          "collector_role": "AdvisoryCollector",
+          "collector_agent": "AdvisoryCollectorAgent",
+          "execution_profile": "broad_discovery",
+          "source_specific_hint": "Cast a broad but source-aware recall net.",
+          "execution_notes": "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null
+        },
+        {
+          "source_name": "mitre_attack",
+          "query_count": 1,
+          "query_intent": "broad_recall",
+          "priority": 0.3999999999999999,
+          "collector_role": "StructuredIntelCollector",
+          "collector_agent": "StructuredIntelCollectorAgent",
+          "execution_profile": "broad_discovery",
+          "source_specific_hint": "Cast a broad but source-aware recall net.",
+          "execution_notes": "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null
+        }
+      ],
+      "summary": "CrewAI not installed; using deterministic coordination fallback.",
+      "planning_audits": [
+        {
+          "strategy_requested": "llm_optional",
+          "strategy_executed": "rules_only_degraded",
+          "llm_model": "qwen3.5-plus",
+          "prompt_version": "v1.0-llm-supervisor-planner",
+          "plan_rationale": "Supervisor heuristic plan generated from runtime context, source quality, and query feedback memory.",
+          "source_plan_count": 7,
+          "target_taxonomy_count": 2,
+          "max_parallel_sources": 4,
+          "max_reflection_rounds": 1,
+          "confidence": 0.68,
+          "feedback_rows_used": 0,
+          "fallback_reason": "Error code: 400 - {'error': {'message': \"<400> InternalError.Algo.InvalidParameter: 'messages' must contain the word 'json' in some form, to use 'response_format' of type 'json_object'.\", 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_parameter_error'}, 'id': 'chatcmpl-b6567f7d-bbff-9698-b06c-499a2498607c', 'request_id': 'b6567f7d-bbff-9698-b06c-499a2498607c'}",
+          "invoked_at": "2026-03-20T07:08:02.836231+00:00"
+        }
+      ],
+      "reflection_audits": []
+    }
+  0.3ms
+········································································
+
+✓ [04] collect_advisory_sources
+  raw_items:     [
+      {
+        "query_run_id": "qrun_90587890799e",
+        "source_name": "cisa_kev",
+        "source_uri": "stub://cisa_kev/qrun_90587890799e",
+        "external_id": "cisa_kev-90799e",
+        "title": "Stub CISA KEV entry for AI-adjacent stack",
+        "summary": "Stub collection result for query 'langchain'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.027908+00:00",
+        "fetched_at": "2026-03-20T07:08:04.027908+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_90587890799e_ab471a1e990b.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_90587890799e_ab471a1e990b.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "broad_recall",
+          "request_profile": "local_filter_scan",
+          "transformed_query_text": "langchain",
+          "payload_sha256": "ab471a1e990b959fd619a4a609e61d5f9668766a0410bf07b3786c428c2e653e",
+          "query_text": "langchain",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.08,
+          "collector_role": "AdvisoryCollector",
+          "collector_agent": "AdvisoryCollectorAgent",
+          "execution_profile": "broad_discovery",
+          "source_specific_hint": "Cast a broad but source-aware recall net.",
+          "execution_notes": "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.028915+00:00"
+        },
+        "content_hash": "ab471a1e990b959fd619a4a609e61d5f9668766a0410bf07b3786c428c2e653e"
+      }
+    ]
+  fetch_audits:     [
+      {
+        "query_run_id": "qrun_90587890799e",
+        "source_name": "cisa_kev",
+        "requested_at": "2026-03-20T07:08:04.027908+00:00",
+        "completed_at": "2026-03-20T07:08:04.027908+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+          "runtime_mode": "stub",
+          "pagination_style": "none",
+          "cursor_in": null,
+          "query_intent": "broad_recall",
+          "original_query_text": "langchain",
+          "transformed_query_text": "langchain",
+          "request_profile": "local_filter_scan",
+          "query_tokens": [
+            "langchain"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      }
+    ]
+  0.1ms
+········································································
+
+✓ [05] collect_code_sources
+  raw_items:     [
+      {
+        "query_run_id": "qrun_90587890799e",
+        "source_name": "cisa_kev",
+        "source_uri": "stub://cisa_kev/qrun_90587890799e",
+        "external_id": "cisa_kev-90799e",
+        "title": "Stub CISA KEV entry for AI-adjacent stack",
+        "summary": "Stub collection result for query 'langchain'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.027908+00:00",
+        "fetched_at": "2026-03-20T07:08:04.027908+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_90587890799e_ab471a1e990b.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_90587890799e_ab471a1e990b.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "broad_recall",
+          "request_profile": "local_filter_scan",
+          "transformed_query_text": "langchain",
+          "payload_sha256": "ab471a1e990b959fd619a4a609e61d5f9668766a0410bf07b3786c428c2e653e",
+          "query_text": "langchain",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.08,
+          "collector_role": "AdvisoryCollector",
+          "collector_agent": "AdvisoryCollectorAgent",
+          "execution_profile": "broad_discovery",
+          "source_specific_hint": "Cast a broad but source-aware recall net.",
+          "execution_notes": "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.028915+00:00"
+        },
+        "content_hash": "ab471a1e990b959fd619a4a609e61d5f9668766a0410bf07b3786c428c2e653e"
+      },
+      {
+        "query_run_id": "qrun_0966fb3b5934",
+        "source_name": "github_advisories",
+        "source_uri": "stub://github_advisories/qrun_0966fb3b5934",
+        "external_id": "github_advisories-3b5934",
+        "title": "Stub GitHub advisory affecting LangChain-like package",
+        "summary": "Stub collection result for query 'langchain prompt injection'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.029910+00:00",
+        "fetched_at": "2026-03-20T07:08:04.029910+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_0966fb3b5934_d95b1940ad07.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_0966fb3b5934_d95b1940ad07.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "broad_recall",
+          "request_profile": "github_security_search",
+          "transformed_query_text": "langchain prompt injection",
+          "payload_sha256": "d95b1940ad0787e48ad744f19ec2161740e0167606c326c5c31b12aea40dd81a",
+          "query_text": "langchain prompt injection",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.06,
+          "collector_role": "CodeSecurityCollector",
+          "collector_agent": "CodeSecurityCollectorAgent",
+          "execution_profile": "broad_discovery",
+          "source_specific_hint": "Cast a broad but source-aware recall net.",
+          "execution_notes": "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.030910+00:00"
+        },
+        "content_hash": "d95b1940ad0787e48ad744f19ec2161740e0167606c326c5c31b12aea40dd81a"
+      }
+    ]
+  fetch_audits:     [
+      {
+        "query_run_id": "qrun_90587890799e",
+        "source_name": "cisa_kev",
+        "requested_at": "2026-03-20T07:08:04.027908+00:00",
+        "completed_at": "2026-03-20T07:08:04.027908+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+          "runtime_mode": "stub",
+          "pagination_style": "none",
+          "cursor_in": null,
+          "query_intent": "broad_recall",
+          "original_query_text": "langchain",
+          "transformed_query_text": "langchain",
+          "request_profile": "local_filter_scan",
+          "query_tokens": [
+            "langchain"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      },
+      {
+        "query_run_id": "qrun_0966fb3b5934",
+        "source_name": "github_advisories",
+        "requested_at": "2026-03-20T07:08:04.029910+00:00",
+        "completed_at": "2026-03-20T07:08:04.029910+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://api.github.com/graphql",
+          "runtime_mode": "stub",
+          "pagination_style": "cursor",
+          "cursor_in": null,
+          "query_intent": "broad_recall",
+          "original_query_text": "langchain prompt injection",
+          "transformed_query_text": "langchain prompt injection",
+          "request_profile": "github_security_search",
+          "query_tokens": [
+            "langchain",
+            "prompt",
+            "injection"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      }
+    ]
+  query_telemetry:     []
+  0.3ms
+········································································
+
+✓ [06] collect_community_sources
+  raw_items:     [
+      {
+        "query_run_id": "qrun_90587890799e",
+        "source_name": "cisa_kev",
+        "source_uri": "stub://cisa_kev/qrun_90587890799e",
+        "external_id": "cisa_kev-90799e",
+        "title": "Stub CISA KEV entry for AI-adjacent stack",
+        "summary": "Stub collection result for query 'langchain'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.027908+00:00",
+        "fetched_at": "2026-03-20T07:08:04.027908+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_90587890799e_ab471a1e990b.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_90587890799e_ab471a1e990b.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "broad_recall",
+          "request_profile": "local_filter_scan",
+          "transformed_query_text": "langchain",
+          "payload_sha256": "ab471a1e990b959fd619a4a609e61d5f9668766a0410bf07b3786c428c2e653e",
+          "query_text": "langchain",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.08,
+          "collector_role": "AdvisoryCollector",
+          "collector_agent": "AdvisoryCollectorAgent",
+          "execution_profile": "broad_discovery",
+          "source_specific_hint": "Cast a broad but source-aware recall net.",
+          "execution_notes": "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.028915+00:00"
+        },
+        "content_hash": "ab471a1e990b959fd619a4a609e61d5f9668766a0410bf07b3786c428c2e653e"
+      },
+      {
+        "query_run_id": "qrun_0966fb3b5934",
+        "source_name": "github_advisories",
+        "source_uri": "stub://github_advisories/qrun_0966fb3b5934",
+        "external_id": "github_advisories-3b5934",
+        "title": "Stub GitHub advisory affecting LangChain-like package",
+        "summary": "Stub collection result for query 'langchain prompt injection'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.029910+00:00",
+        "fetched_at": "2026-03-20T07:08:04.029910+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_0966fb3b5934_d95b1940ad07.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_0966fb3b5934_d95b1940ad07.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "broad_recall",
+          "request_profile": "github_security_search",
+          "transformed_query_text": "langchain prompt injection",
+          "payload_sha256": "d95b1940ad0787e48ad744f19ec2161740e0167606c326c5c31b12aea40dd81a",
+          "query_text": "langchain prompt injection",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.06,
+          "collector_role": "CodeSecurityCollector",
+          "collector_agent": "CodeSecurityCollectorAgent",
+          "execution_profile": "broad_discovery",
+          "source_specific_hint": "Cast a broad but source-aware recall net.",
+          "execution_notes": "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.030910+00:00"
+        },
+        "content_hash": "d95b1940ad0787e48ad744f19ec2161740e0167606c326c5c31b12aea40dd81a"
+      },
+      {
+        "query_run_id": "qrun_23240aba0da0",
+        "source_name": "hackernews",
+        "source_uri": "stub://hackernews/qrun_23240aba0da0",
+        "external_id": "hackernews-ba0da0",
+        "title": "Stub HN thread on AI system vulnerabilities",
+        "summary": "Stub collection result for query 'AI security vulnerability'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.030910+00:00",
+        "fetched_at": "2026-03-20T07:08:04.030910+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_23240aba0da0_0b2fe799aee8.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_23240aba0da0_0b2fe799aee8.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "weak_signal_probe",
+          "request_profile": "hn_algolia_search",
+          "transformed_query_text": "AI security vulnerability security incident",
+          "payload_sha256": "0b2fe799aee840ea64bb8f67a68a6f3460fcb050a02af0f213160ec0aff6997f",
+          "query_text": "AI security vulnerability",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.05,
+          "collector_role": "CommunitySignalCollector",
+          "collector_agent": "CommunitySignalCollectorAgent",
+          "execution_profile": "weak_signal_scan",
+          "source_specific_hint": "Prefer discussion language, symptom phrasing, and emerging chatter.",
+          "execution_notes": "profile=weak_signal_scan | intent=weak_signal_probe | Prefer discussion language, symptom phrasing, and emerging chatter. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.032910+00:00"
+        },
+        "content_hash": "0b2fe799aee840ea64bb8f67a68a6f3460fcb050a02af0f213160ec0aff6997f"
+      },
+      {
+        "query_run_id": "qrun_840ed9715f12",
+        "source_name": "reddit",
+        "source_uri": "stub://reddit/qrun_840ed9715f12",
+        "external_id": "reddit-715f12",
+        "title": "Stub Reddit discussion on jailbreak behavior",
+        "summary": "Stub collection result for query 'LLM jailbreak'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.030910+00:00",
+        "fetched_at": "2026-03-20T07:08:04.030910+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_840ed9715f12_47a203a05fcc.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_840ed9715f12_47a203a05fcc.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "weak_signal_probe",
+          "request_profile": "reddit_rss_search",
+          "transformed_query_text": "LLM jailbreak OR weird OR bypass OR jailbreak",
+          "payload_sha256": "47a203a05fccae6d64300112f9bccdc52e47f17358fbccbf597deb1b3a63c4f0",
+          "query_text": "LLM jailbreak",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.06,
+          "collector_role": "CommunitySignalCollector",
+          "collector_agent": "CommunitySignalCollectorAgent",
+          "execution_profile": "weak_signal_scan",
+          "source_specific_hint": "Prefer discussion language, symptom phrasing, and emerging chatter.",
+          "execution_notes": "profile=weak_signal_scan | intent=weak_signal_probe | Prefer discussion language, symptom phrasing, and emerging chatter. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.032910+00:00"
+        },
+        "content_hash": "47a203a05fccae6d64300112f9bccdc52e47f17358fbccbf597deb1b3a63c4f0"
+      }
+    ]
+  fetch_audits:     [
+      {
+        "query_run_id": "qrun_90587890799e",
+        "source_name": "cisa_kev",
+        "requested_at": "2026-03-20T07:08:04.027908+00:00",
+        "completed_at": "2026-03-20T07:08:04.027908+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+          "runtime_mode": "stub",
+          "pagination_style": "none",
+          "cursor_in": null,
+          "query_intent": "broad_recall",
+          "original_query_text": "langchain",
+          "transformed_query_text": "langchain",
+          "request_profile": "local_filter_scan",
+          "query_tokens": [
+            "langchain"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      },
+      {
+        "query_run_id": "qrun_0966fb3b5934",
+        "source_name": "github_advisories",
+        "requested_at": "2026-03-20T07:08:04.029910+00:00",
+        "completed_at": "2026-03-20T07:08:04.029910+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://api.github.com/graphql",
+          "runtime_mode": "stub",
+          "pagination_style": "cursor",
+          "cursor_in": null,
+          "query_intent": "broad_recall",
+          "original_query_text": "langchain prompt injection",
+          "transformed_query_text": "langchain prompt injection",
+          "request_profile": "github_security_search",
+          "query_tokens": [
+            "langchain",
+            "prompt",
+            "injection"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      },
+      {
+        "query_run_id": "qrun_23240aba0da0",
+        "source_name": "hackernews",
+        "requested_at": "2026-03-20T07:08:04.030910+00:00",
+        "completed_at": "2026-03-20T07:08:04.030910+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://hn.algolia.com/api/v1/search",
+          "runtime_mode": "stub",
+          "pagination_style": "offset",
+          "cursor_in": null,
+          "query_intent": "weak_signal_probe",
+          "original_query_text": "AI security vulnerability",
+          "transformed_query_text": "AI security vulnerability security incident",
+          "request_profile": "hn_algolia_search",
+          "query_tokens": [
+            "ai",
+            "security",
+            "vulnerability",
+            "security",
+            "incident"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      },
+      {
+        "query_run_id": "qrun_840ed9715f12",
+        "source_name": "reddit",
+        "requested_at": "2026-03-20T07:08:04.030910+00:00",
+        "completed_at": "2026-03-20T07:08:04.030910+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://www.reddit.com",
+          "runtime_mode": "stub",
+          "pagination_style": "feed",
+          "cursor_in": null,
+          "query_intent": "weak_signal_probe",
+          "original_query_text": "LLM jailbreak",
+          "transformed_query_text": "LLM jailbreak OR weird OR bypass OR jailbreak",
+          "request_profile": "reddit_rss_search",
+          "query_tokens": [
+            "llm",
+            "jailbreak",
+            "or",
+            "weird",
+            "or",
+            "bypass",
+            "or",
+            "jailbreak"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      }
+    ]
+  0.3ms
+········································································
+
+✓ [07] collect_structured_sources
+  raw_items:     [
+      {
+        "query_run_id": "qrun_90587890799e",
+        "source_name": "cisa_kev",
+        "source_uri": "stub://cisa_kev/qrun_90587890799e",
+        "external_id": "cisa_kev-90799e",
+        "title": "Stub CISA KEV entry for AI-adjacent stack",
+        "summary": "Stub collection result for query 'langchain'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.027908+00:00",
+        "fetched_at": "2026-03-20T07:08:04.027908+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_90587890799e_ab471a1e990b.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_90587890799e_ab471a1e990b.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "broad_recall",
+          "request_profile": "local_filter_scan",
+          "transformed_query_text": "langchain",
+          "payload_sha256": "ab471a1e990b959fd619a4a609e61d5f9668766a0410bf07b3786c428c2e653e",
+          "query_text": "langchain",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.08,
+          "collector_role": "AdvisoryCollector",
+          "collector_agent": "AdvisoryCollectorAgent",
+          "execution_profile": "broad_discovery",
+          "source_specific_hint": "Cast a broad but source-aware recall net.",
+          "execution_notes": "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.028915+00:00"
+        },
+        "content_hash": "ab471a1e990b959fd619a4a609e61d5f9668766a0410bf07b3786c428c2e653e"
+      },
+      {
+        "query_run_id": "qrun_0966fb3b5934",
+        "source_name": "github_advisories",
+        "source_uri": "stub://github_advisories/qrun_0966fb3b5934",
+        "external_id": "github_advisories-3b5934",
+        "title": "Stub GitHub advisory affecting LangChain-like package",
+        "summary": "Stub collection result for query 'langchain prompt injection'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.029910+00:00",
+        "fetched_at": "2026-03-20T07:08:04.029910+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_0966fb3b5934_d95b1940ad07.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_0966fb3b5934_d95b1940ad07.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "broad_recall",
+          "request_profile": "github_security_search",
+          "transformed_query_text": "langchain prompt injection",
+          "payload_sha256": "d95b1940ad0787e48ad744f19ec2161740e0167606c326c5c31b12aea40dd81a",
+          "query_text": "langchain prompt injection",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.06,
+          "collector_role": "CodeSecurityCollector",
+          "collector_agent": "CodeSecurityCollectorAgent",
+          "execution_profile": "broad_discovery",
+          "source_specific_hint": "Cast a broad but source-aware recall net.",
+          "execution_notes": "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.030910+00:00"
+        },
+        "content_hash": "d95b1940ad0787e48ad744f19ec2161740e0167606c326c5c31b12aea40dd81a"
+      },
+      {
+        "query_run_id": "qrun_23240aba0da0",
+        "source_name": "hackernews",
+        "source_uri": "stub://hackernews/qrun_23240aba0da0",
+        "external_id": "hackernews-ba0da0",
+        "title": "Stub HN thread on AI system vulnerabilities",
+        "summary": "Stub collection result for query 'AI security vulnerability'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.030910+00:00",
+        "fetched_at": "2026-03-20T07:08:04.030910+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_23240aba0da0_0b2fe799aee8.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_23240aba0da0_0b2fe799aee8.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "weak_signal_probe",
+          "request_profile": "hn_algolia_search",
+          "transformed_query_text": "AI security vulnerability security incident",
+          "payload_sha256": "0b2fe799aee840ea64bb8f67a68a6f3460fcb050a02af0f213160ec0aff6997f",
+          "query_text": "AI security vulnerability",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.05,
+          "collector_role": "CommunitySignalCollector",
+          "collector_agent": "CommunitySignalCollectorAgent",
+          "execution_profile": "weak_signal_scan",
+          "source_specific_hint": "Prefer discussion language, symptom phrasing, and emerging chatter.",
+          "execution_notes": "profile=weak_signal_scan | intent=weak_signal_probe | Prefer discussion language, symptom phrasing, and emerging chatter. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.032910+00:00"
+        },
+        "content_hash": "0b2fe799aee840ea64bb8f67a68a6f3460fcb050a02af0f213160ec0aff6997f"
+      },
+      {
+        "query_run_id": "qrun_840ed9715f12",
+        "source_name": "reddit",
+        "source_uri": "stub://reddit/qrun_840ed9715f12",
+        "external_id": "reddit-715f12",
+        "title": "Stub Reddit discussion on jailbreak behavior",
+        "summary": "Stub collection result for query 'LLM jailbreak'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.030910+00:00",
+        "fetched_at": "2026-03-20T07:08:04.030910+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_840ed9715f12_47a203a05fcc.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_840ed9715f12_47a203a05fcc.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "weak_signal_probe",
+          "request_profile": "reddit_rss_search",
+          "transformed_query_text": "LLM jailbreak OR weird OR bypass OR jailbreak",
+          "payload_sha256": "47a203a05fccae6d64300112f9bccdc52e47f17358fbccbf597deb1b3a63c4f0",
+          "query_text": "LLM jailbreak",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.06,
+          "collector_role": "CommunitySignalCollector",
+          "collector_agent": "CommunitySignalCollectorAgent",
+          "execution_profile": "weak_signal_scan",
+          "source_specific_hint": "Prefer discussion language, symptom phrasing, and emerging chatter.",
+          "execution_notes": "profile=weak_signal_scan | intent=weak_signal_probe | Prefer discussion language, symptom phrasing, and emerging chatter. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.032910+00:00"
+        },
+        "content_hash": "47a203a05fccae6d64300112f9bccdc52e47f17358fbccbf597deb1b3a63c4f0"
+      },
+      {
+        "query_run_id": "qrun_aa5421acfa35",
+        "source_name": "mitre_attack",
+        "source_uri": "stub://mitre_attack/qrun_aa5421acfa35",
+        "external_id": "mitre_attack-acfa35",
+        "title": "Stub ATT&CK technique update for agent misuse",
+        "summary": "Stub collection result for query 'agent hijack'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.032910+00:00",
+        "fetched_at": "2026-03-20T07:08:04.032910+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_aa5421acfa35_1c84d0e785f7.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_aa5421acfa35_1c84d0e785f7.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "broad_recall",
+          "request_profile": "local_filter_scan",
+          "transformed_query_text": "agent hijack",
+          "payload_sha256": "1c84d0e785f79dbcac8d30e950ebe2b85bef99d21da2e53845af77afd3e4bf79",
+          "query_text": "agent hijack",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.05,
+          "collector_role": "StructuredIntelCollector",
+          "collector_agent": "StructuredIntelCollectorAgent",
+          "execution_profile": "broad_discovery",
+          "source_specific_hint": "Cast a broad but source-aware recall net.",
+          "execution_notes": "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.033910+00:00"
+        },
+        "content_hash": "1c84d0e785f79dbcac8d30e950ebe2b85bef99d21da2e53845af77afd3e4bf79"
+      },
+      {
+        "query_run_id": "qrun_894b5c1d6dd9",
+        "source_name": "nvd",
+        "source_uri": "stub://nvd/qrun_894b5c1d6dd9",
+        "external_id": "nvd-1d6dd9",
+        "title": "Stub CVE advisory for AI component misuse",
+        "summary": "Stub collection result for query 'prompt injection langchain'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.032910+00:00",
+        "fetched_at": "2026-03-20T07:08:04.032910+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_894b5c1d6dd9_135da982ebe5.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_894b5c1d6dd9_135da982ebe5.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "broad_recall",
+          "request_profile": "nvd_keyword_search",
+          "transformed_query_text": "prompt injection langchain",
+          "payload_sha256": "135da982ebe520330ab34dd0c7b175ba0b1d55da7b39929749da5ddf7f305036",
+          "query_text": "prompt injection langchain",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.06,
+          "collector_role": "StructuredIntelCollector",
+          "collector_agent": "StructuredIntelCollectorAgent",
+          "execution_profile": "broad_discovery",
+          "source_specific_hint": "Cast a broad but source-aware recall net.",
+          "execution_notes": "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.034910+00:00"
+        },
+        "content_hash": "135da982ebe520330ab34dd0c7b175ba0b1d55da7b39929749da5ddf7f305036"
+      }
+    ]
+  fetch_audits:     [
+      {
+        "query_run_id": "qrun_90587890799e",
+        "source_name": "cisa_kev",
+        "requested_at": "2026-03-20T07:08:04.027908+00:00",
+        "completed_at": "2026-03-20T07:08:04.027908+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+          "runtime_mode": "stub",
+          "pagination_style": "none",
+          "cursor_in": null,
+          "query_intent": "broad_recall",
+          "original_query_text": "langchain",
+          "transformed_query_text": "langchain",
+          "request_profile": "local_filter_scan",
+          "query_tokens": [
+            "langchain"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      },
+      {
+        "query_run_id": "qrun_0966fb3b5934",
+        "source_name": "github_advisories",
+        "requested_at": "2026-03-20T07:08:04.029910+00:00",
+        "completed_at": "2026-03-20T07:08:04.029910+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://api.github.com/graphql",
+          "runtime_mode": "stub",
+          "pagination_style": "cursor",
+          "cursor_in": null,
+          "query_intent": "broad_recall",
+          "original_query_text": "langchain prompt injection",
+          "transformed_query_text": "langchain prompt injection",
+          "request_profile": "github_security_search",
+          "query_tokens": [
+            "langchain",
+            "prompt",
+            "injection"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      },
+      {
+        "query_run_id": "qrun_23240aba0da0",
+        "source_name": "hackernews",
+        "requested_at": "2026-03-20T07:08:04.030910+00:00",
+        "completed_at": "2026-03-20T07:08:04.030910+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://hn.algolia.com/api/v1/search",
+          "runtime_mode": "stub",
+          "pagination_style": "offset",
+          "cursor_in": null,
+          "query_intent": "weak_signal_probe",
+          "original_query_text": "AI security vulnerability",
+          "transformed_query_text": "AI security vulnerability security incident",
+          "request_profile": "hn_algolia_search",
+          "query_tokens": [
+            "ai",
+            "security",
+            "vulnerability",
+            "security",
+            "incident"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      },
+      {
+        "query_run_id": "qrun_840ed9715f12",
+        "source_name": "reddit",
+        "requested_at": "2026-03-20T07:08:04.030910+00:00",
+        "completed_at": "2026-03-20T07:08:04.030910+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://www.reddit.com",
+          "runtime_mode": "stub",
+          "pagination_style": "feed",
+          "cursor_in": null,
+          "query_intent": "weak_signal_probe",
+          "original_query_text": "LLM jailbreak",
+          "transformed_query_text": "LLM jailbreak OR weird OR bypass OR jailbreak",
+          "request_profile": "reddit_rss_search",
+          "query_tokens": [
+            "llm",
+            "jailbreak",
+            "or",
+            "weird",
+            "or",
+            "bypass",
+            "or",
+            "jailbreak"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      },
+      {
+        "query_run_id": "qrun_aa5421acfa35",
+        "source_name": "mitre_attack",
+        "requested_at": "2026-03-20T07:08:04.032910+00:00",
+        "completed_at": "2026-03-20T07:08:04.032910+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json",
+          "runtime_mode": "stub",
+          "pagination_style": "none",
+          "cursor_in": null,
+          "query_intent": "broad_recall",
+          "original_query_text": "agent hijack",
+          "transformed_query_text": "agent hijack",
+          "request_profile": "local_filter_scan",
+          "query_tokens": [
+            "agent",
+            "hijack"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      },
+      {
+        "query_run_id": "qrun_894b5c1d6dd9",
+        "source_name": "nvd",
+        "requested_at": "2026-03-20T07:08:04.032910+00:00",
+        "completed_at": "2026-03-20T07:08:04.032910+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://services.nvd.nist.gov/rest/json/cves/2.0",
+          "runtime_mode": "stub",
+          "pagination_style": "offset",
+          "cursor_in": null,
+          "query_intent": "broad_recall",
+          "original_query_text": "prompt injection langchain",
+          "transformed_query_text": "prompt injection langchain",
+          "request_profile": "nvd_keyword_search",
+          "query_tokens": [
+            "prompt",
+            "injection",
+            "langchain"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      }
+    ]
+  query_telemetry:     []
+  0.3ms
+········································································
+
+✓ [08] collect_paper_sources
+  raw_items:     [
+      {
+        "query_run_id": "qrun_90587890799e",
+        "source_name": "cisa_kev",
+        "source_uri": "stub://cisa_kev/qrun_90587890799e",
+        "external_id": "cisa_kev-90799e",
+        "title": "Stub CISA KEV entry for AI-adjacent stack",
+        "summary": "Stub collection result for query 'langchain'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.027908+00:00",
+        "fetched_at": "2026-03-20T07:08:04.027908+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_90587890799e_ab471a1e990b.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_90587890799e_ab471a1e990b.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "broad_recall",
+          "request_profile": "local_filter_scan",
+          "transformed_query_text": "langchain",
+          "payload_sha256": "ab471a1e990b959fd619a4a609e61d5f9668766a0410bf07b3786c428c2e653e",
+          "query_text": "langchain",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.08,
+          "collector_role": "AdvisoryCollector",
+          "collector_agent": "AdvisoryCollectorAgent",
+          "execution_profile": "broad_discovery",
+          "source_specific_hint": "Cast a broad but source-aware recall net.",
+          "execution_notes": "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.028915+00:00"
+        },
+        "content_hash": "ab471a1e990b959fd619a4a609e61d5f9668766a0410bf07b3786c428c2e653e"
+      },
+      {
+        "query_run_id": "qrun_0966fb3b5934",
+        "source_name": "github_advisories",
+        "source_uri": "stub://github_advisories/qrun_0966fb3b5934",
+        "external_id": "github_advisories-3b5934",
+        "title": "Stub GitHub advisory affecting LangChain-like package",
+        "summary": "Stub collection result for query 'langchain prompt injection'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.029910+00:00",
+        "fetched_at": "2026-03-20T07:08:04.029910+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_0966fb3b5934_d95b1940ad07.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_0966fb3b5934_d95b1940ad07.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "broad_recall",
+          "request_profile": "github_security_search",
+          "transformed_query_text": "langchain prompt injection",
+          "payload_sha256": "d95b1940ad0787e48ad744f19ec2161740e0167606c326c5c31b12aea40dd81a",
+          "query_text": "langchain prompt injection",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.06,
+          "collector_role": "CodeSecurityCollector",
+          "collector_agent": "CodeSecurityCollectorAgent",
+          "execution_profile": "broad_discovery",
+          "source_specific_hint": "Cast a broad but source-aware recall net.",
+          "execution_notes": "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.030910+00:00"
+        },
+        "content_hash": "d95b1940ad0787e48ad744f19ec2161740e0167606c326c5c31b12aea40dd81a"
+      },
+      {
+        "query_run_id": "qrun_23240aba0da0",
+        "source_name": "hackernews",
+        "source_uri": "stub://hackernews/qrun_23240aba0da0",
+        "external_id": "hackernews-ba0da0",
+        "title": "Stub HN thread on AI system vulnerabilities",
+        "summary": "Stub collection result for query 'AI security vulnerability'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.030910+00:00",
+        "fetched_at": "2026-03-20T07:08:04.030910+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_23240aba0da0_0b2fe799aee8.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_23240aba0da0_0b2fe799aee8.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "weak_signal_probe",
+          "request_profile": "hn_algolia_search",
+          "transformed_query_text": "AI security vulnerability security incident",
+          "payload_sha256": "0b2fe799aee840ea64bb8f67a68a6f3460fcb050a02af0f213160ec0aff6997f",
+          "query_text": "AI security vulnerability",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.05,
+          "collector_role": "CommunitySignalCollector",
+          "collector_agent": "CommunitySignalCollectorAgent",
+          "execution_profile": "weak_signal_scan",
+          "source_specific_hint": "Prefer discussion language, symptom phrasing, and emerging chatter.",
+          "execution_notes": "profile=weak_signal_scan | intent=weak_signal_probe | Prefer discussion language, symptom phrasing, and emerging chatter. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.032910+00:00"
+        },
+        "content_hash": "0b2fe799aee840ea64bb8f67a68a6f3460fcb050a02af0f213160ec0aff6997f"
+      },
+      {
+        "query_run_id": "qrun_840ed9715f12",
+        "source_name": "reddit",
+        "source_uri": "stub://reddit/qrun_840ed9715f12",
+        "external_id": "reddit-715f12",
+        "title": "Stub Reddit discussion on jailbreak behavior",
+        "summary": "Stub collection result for query 'LLM jailbreak'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.030910+00:00",
+        "fetched_at": "2026-03-20T07:08:04.030910+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_840ed9715f12_47a203a05fcc.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_840ed9715f12_47a203a05fcc.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "weak_signal_probe",
+          "request_profile": "reddit_rss_search",
+          "transformed_query_text": "LLM jailbreak OR weird OR bypass OR jailbreak",
+          "payload_sha256": "47a203a05fccae6d64300112f9bccdc52e47f17358fbccbf597deb1b3a63c4f0",
+          "query_text": "LLM jailbreak",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.06,
+          "collector_role": "CommunitySignalCollector",
+          "collector_agent": "CommunitySignalCollectorAgent",
+          "execution_profile": "weak_signal_scan",
+          "source_specific_hint": "Prefer discussion language, symptom phrasing, and emerging chatter.",
+          "execution_notes": "profile=weak_signal_scan | intent=weak_signal_probe | Prefer discussion language, symptom phrasing, and emerging chatter. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.032910+00:00"
+        },
+        "content_hash": "47a203a05fccae6d64300112f9bccdc52e47f17358fbccbf597deb1b3a63c4f0"
+      },
+      {
+        "query_run_id": "qrun_aa5421acfa35",
+        "source_name": "mitre_attack",
+        "source_uri": "stub://mitre_attack/qrun_aa5421acfa35",
+        "external_id": "mitre_attack-acfa35",
+        "title": "Stub ATT&CK technique update for agent misuse",
+        "summary": "Stub collection result for query 'agent hijack'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.032910+00:00",
+        "fetched_at": "2026-03-20T07:08:04.032910+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_aa5421acfa35_1c84d0e785f7.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_aa5421acfa35_1c84d0e785f7.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "broad_recall",
+          "request_profile": "local_filter_scan",
+          "transformed_query_text": "agent hijack",
+          "payload_sha256": "1c84d0e785f79dbcac8d30e950ebe2b85bef99d21da2e53845af77afd3e4bf79",
+          "query_text": "agent hijack",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.05,
+          "collector_role": "StructuredIntelCollector",
+          "collector_agent": "StructuredIntelCollectorAgent",
+          "execution_profile": "broad_discovery",
+          "source_specific_hint": "Cast a broad but source-aware recall net.",
+          "execution_notes": "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.033910+00:00"
+        },
+        "content_hash": "1c84d0e785f79dbcac8d30e950ebe2b85bef99d21da2e53845af77afd3e4bf79"
+      },
+      {
+        "query_run_id": "qrun_894b5c1d6dd9",
+        "source_name": "nvd",
+        "source_uri": "stub://nvd/qrun_894b5c1d6dd9",
+        "external_id": "nvd-1d6dd9",
+        "title": "Stub CVE advisory for AI component misuse",
+        "summary": "Stub collection result for query 'prompt injection langchain'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.032910+00:00",
+        "fetched_at": "2026-03-20T07:08:04.032910+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_894b5c1d6dd9_135da982ebe5.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_894b5c1d6dd9_135da982ebe5.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "broad_recall",
+          "request_profile": "nvd_keyword_search",
+          "transformed_query_text": "prompt injection langchain",
+          "payload_sha256": "135da982ebe520330ab34dd0c7b175ba0b1d55da7b39929749da5ddf7f305036",
+          "query_text": "prompt injection langchain",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.06,
+          "collector_role": "StructuredIntelCollector",
+          "collector_agent": "StructuredIntelCollectorAgent",
+          "execution_profile": "broad_discovery",
+          "source_specific_hint": "Cast a broad but source-aware recall net.",
+          "execution_notes": "profile=broad_discovery | intent=broad_recall | Cast a broad but source-aware recall net. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.034910+00:00"
+        },
+        "content_hash": "135da982ebe520330ab34dd0c7b175ba0b1d55da7b39929749da5ddf7f305036"
+      },
+      {
+        "query_run_id": "qrun_b65c723a103c",
+        "source_name": "arxiv",
+        "source_uri": "stub://arxiv/qrun_b65c723a103c",
+        "external_id": "arxiv-3a103c",
+        "title": "Stub arXiv paper on prompt injection attacks",
+        "summary": "Stub collection result for query 'prompt injection jailbreak language model'.",
+        "author": "phase2_stub",
+        "published_at": "2026-03-20T07:08:04.033910+00:00",
+        "fetched_at": "2026-03-20T07:08:04.033910+00:00",
+        "raw_format": "json",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_b65c723a103c_2ab09e02a62f.json",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_b65c723a103c_2ab09e02a62f.json",
+        "language_code": null,
+        "relevance_score": 0.75,
+        "parser_status": "pending",
+        "metadata": {
+          "stub": true,
+          "query_intent": "evidence_corroboration",
+          "request_profile": "arxiv_atom_search",
+          "transformed_query_text": "all:\"prompt injection jailbreak language model\"",
+          "payload_sha256": "2ab09e02a62f5bec9ad31ea8dc4bac080dd83284ab7e723ad023f197a5863da6",
+          "query_text": "prompt injection jailbreak language model",
+          "reflection_round": 0,
+          "used_stub": true,
+          "latency_ms": 0.05,
+          "collector_role": "PaperIntelCollector",
+          "collector_agent": "PaperIntelCollectorAgent",
+          "execution_profile": "corroboration_pass",
+          "source_specific_hint": "Seek confirmatory evidence and cross-source support.",
+          "execution_notes": "profile=corroboration_pass | intent=evidence_corroboration | Seek confirmatory evidence and cross-source support. | planning=rules_only_degraded",
+          "planning_signal": "rules_only_degraded",
+          "reflection_signal": null,
+          "collected_at": "2026-03-20T07:08:04.034910+00:00"
+        },
+        "content_hash": "2ab09e02a62f5bec9ad31ea8dc4bac080dd83284ab7e723ad023f197a5863da6"
+      }
+    ]
+  fetch_audits:     [
+      {
+        "query_run_id": "qrun_90587890799e",
+        "source_name": "cisa_kev",
+        "requested_at": "2026-03-20T07:08:04.027908+00:00",
+        "completed_at": "2026-03-20T07:08:04.027908+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+          "runtime_mode": "stub",
+          "pagination_style": "none",
+          "cursor_in": null,
+          "query_intent": "broad_recall",
+          "original_query_text": "langchain",
+          "transformed_query_text": "langchain",
+          "request_profile": "local_filter_scan",
+          "query_tokens": [
+            "langchain"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      },
+      {
+        "query_run_id": "qrun_0966fb3b5934",
+        "source_name": "github_advisories",
+        "requested_at": "2026-03-20T07:08:04.029910+00:00",
+        "completed_at": "2026-03-20T07:08:04.029910+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://api.github.com/graphql",
+          "runtime_mode": "stub",
+          "pagination_style": "cursor",
+          "cursor_in": null,
+          "query_intent": "broad_recall",
+          "original_query_text": "langchain prompt injection",
+          "transformed_query_text": "langchain prompt injection",
+          "request_profile": "github_security_search",
+          "query_tokens": [
+            "langchain",
+            "prompt",
+            "injection"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      },
+      {
+        "query_run_id": "qrun_23240aba0da0",
+        "source_name": "hackernews",
+        "requested_at": "2026-03-20T07:08:04.030910+00:00",
+        "completed_at": "2026-03-20T07:08:04.030910+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://hn.algolia.com/api/v1/search",
+          "runtime_mode": "stub",
+          "pagination_style": "offset",
+          "cursor_in": null,
+          "query_intent": "weak_signal_probe",
+          "original_query_text": "AI security vulnerability",
+          "transformed_query_text": "AI security vulnerability security incident",
+          "request_profile": "hn_algolia_search",
+          "query_tokens": [
+            "ai",
+            "security",
+            "vulnerability",
+            "security",
+            "incident"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      },
+      {
+        "query_run_id": "qrun_840ed9715f12",
+        "source_name": "reddit",
+        "requested_at": "2026-03-20T07:08:04.030910+00:00",
+        "completed_at": "2026-03-20T07:08:04.030910+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://www.reddit.com",
+          "runtime_mode": "stub",
+          "pagination_style": "feed",
+          "cursor_in": null,
+          "query_intent": "weak_signal_probe",
+          "original_query_text": "LLM jailbreak",
+          "transformed_query_text": "LLM jailbreak OR weird OR bypass OR jailbreak",
+          "request_profile": "reddit_rss_search",
+          "query_tokens": [
+            "llm",
+            "jailbreak",
+            "or",
+            "weird",
+            "or",
+            "bypass",
+            "or",
+            "jailbreak"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      },
+      {
+        "query_run_id": "qrun_aa5421acfa35",
+        "source_name": "mitre_attack",
+        "requested_at": "2026-03-20T07:08:04.032910+00:00",
+        "completed_at": "2026-03-20T07:08:04.032910+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json",
+          "runtime_mode": "stub",
+          "pagination_style": "none",
+          "cursor_in": null,
+          "query_intent": "broad_recall",
+          "original_query_text": "agent hijack",
+          "transformed_query_text": "agent hijack",
+          "request_profile": "local_filter_scan",
+          "query_tokens": [
+            "agent",
+            "hijack"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      },
+      {
+        "query_run_id": "qrun_894b5c1d6dd9",
+        "source_name": "nvd",
+        "requested_at": "2026-03-20T07:08:04.032910+00:00",
+        "completed_at": "2026-03-20T07:08:04.032910+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://services.nvd.nist.gov/rest/json/cves/2.0",
+          "runtime_mode": "stub",
+          "pagination_style": "offset",
+          "cursor_in": null,
+          "query_intent": "broad_recall",
+          "original_query_text": "prompt injection langchain",
+          "transformed_query_text": "prompt injection langchain",
+          "request_profile": "nvd_keyword_search",
+          "query_tokens": [
+            "prompt",
+            "injection",
+            "langchain"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      },
+      {
+        "query_run_id": "qrun_b65c723a103c",
+        "source_name": "arxiv",
+        "requested_at": "2026-03-20T07:08:04.033910+00:00",
+        "completed_at": "2026-03-20T07:08:04.033910+00:00",
+        "runtime_mode": "stub",
+        "attempt_count": 1,
+        "success": true,
+        "degraded_from_live": false,
+        "request_meta": {
+          "base_uri": "https://export.arxiv.org/api/query",
+          "runtime_mode": "stub",
+          "pagination_style": "offset",
+          "cursor_in": null,
+          "query_intent": "evidence_corroboration",
+          "original_query_text": "prompt injection jailbreak language model",
+          "transformed_query_text": "all:\"prompt injection jailbreak language model\"",
+          "request_profile": "arxiv_atom_search",
+          "query_tokens": [
+            "all:",
+            "prompt",
+            "injection",
+            "jailbreak",
+            "language",
+            "model"
+          ]
+        },
+        "error_type": null,
+        "error_message": null
+      }
+    ]
+  0.4ms
+········································································
+
+✓ [09] store_raw_records
+  stored_raw_ids:     [
+      "raw_local_6d47f1c0b03942f8",
+      "raw_local_4cfda2af35804ba7",
+      "raw_local_de9c65474d7045f5",
+      "raw_local_daa9e00a01ae42f2",
+      "raw_local_1d63cff0111448c6",
+      "raw_local_9c964f604f834ef8",
+      "raw_local_9c8274c6d39a48a4"
+    ]
+  stored_raw_records:     [
+      {
+        "raw_id": "raw_local_6d47f1c0b03942f8",
+        "query_run_id": "qrun_90587890799e",
+        "source_name": "cisa_kev",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_90587890799e_ab471a1e990b.json",
+        "stored_via": "local_manifest",
+        "task_id": null,
+        "content_hash": "ab471a1e990b959fd619a4a609e61d5f9668766a0410bf07b3786c428c2e653e",
+        "ingest_audit_ref": ".runtime/wp11/audit/run_c5086115d2eb/audit_3686271735f54e15.json"
+      },
+      {
+        "raw_id": "raw_local_4cfda2af35804ba7",
+        "query_run_id": "qrun_0966fb3b5934",
+        "source_name": "github_advisories",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_0966fb3b5934_d95b1940ad07.json",
+        "stored_via": "local_manifest",
+        "task_id": null,
+        "content_hash": "d95b1940ad0787e48ad744f19ec2161740e0167606c326c5c31b12aea40dd81a",
+        "ingest_audit_ref": ".runtime/wp11/audit/run_c5086115d2eb/audit_812713b141a143b8.json"
+      },
+      {
+        "raw_id": "raw_local_de9c65474d7045f5",
+        "query_run_id": "qrun_23240aba0da0",
+        "source_name": "hackernews",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_23240aba0da0_0b2fe799aee8.json",
+        "stored_via": "local_manifest",
+        "task_id": null,
+        "content_hash": "0b2fe799aee840ea64bb8f67a68a6f3460fcb050a02af0f213160ec0aff6997f",
+        "ingest_audit_ref": ".runtime/wp11/audit/run_c5086115d2eb/audit_c313a4f109c440bc.json"
+      },
+      {
+        "raw_id": "raw_local_daa9e00a01ae42f2",
+        "query_run_id": "qrun_840ed9715f12",
+        "source_name": "reddit",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_840ed9715f12_47a203a05fcc.json",
+        "stored_via": "local_manifest",
+        "task_id": null,
+        "content_hash": "47a203a05fccae6d64300112f9bccdc52e47f17358fbccbf597deb1b3a63c4f0",
+        "ingest_audit_ref": ".runtime/wp11/audit/run_c5086115d2eb/audit_4fc10ff644184693.json"
+      },
+      {
+        "raw_id": "raw_local_1d63cff0111448c6",
+        "query_run_id": "qrun_b65c723a103c",
+        "source_name": "arxiv",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_b65c723a103c_2ab09e02a62f.json",
+        "stored_via": "local_manifest",
+        "task_id": null,
+        "content_hash": "2ab09e02a62f5bec9ad31ea8dc4bac080dd83284ab7e723ad023f197a5863da6",
+        "ingest_audit_ref": ".runtime/wp11/audit/run_c5086115d2eb/audit_cf54d36cdf874ea0.json"
+      },
+      {
+        "raw_id": "raw_local_9c964f604f834ef8",
+        "query_run_id": "qrun_aa5421acfa35",
+        "source_name": "mitre_attack",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_aa5421acfa35_1c84d0e785f7.json",
+        "stored_via": "local_manifest",
+        "task_id": null,
+        "content_hash": "1c84d0e785f79dbcac8d30e950ebe2b85bef99d21da2e53845af77afd3e4bf79",
+        "ingest_audit_ref": ".runtime/wp11/audit/run_c5086115d2eb/audit_a9a85b28b7d14431.json"
+      },
+      {
+        "raw_id": "raw_local_9c8274c6d39a48a4",
+        "query_run_id": "qrun_894b5c1d6dd9",
+        "source_name": "nvd",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_894b5c1d6dd9_135da982ebe5.json",
+        "stored_via": "local_manifest",
+        "task_id": null,
+        "content_hash": "135da982ebe520330ab34dd0c7b175ba0b1d55da7b39929749da5ddf7f305036",
+        "ingest_audit_ref": ".runtime/wp11/audit/run_c5086115d2eb/audit_e9211dc157f34b4c.json"
+      }
+    ]
+  ingest_audits:     [
+      {
+        "trace_id": "trace_d60f3359a3fb46dd",
+        "run_id": "run_c5086115d2eb",
+        "query_run_id": "qrun_90587890799e",
+        "source_name": "cisa_kev",
+        "stored_via": "local_manifest",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_90587890799e_ab471a1e990b.json",
+        "manifest_uri": ".runtime/wp11/raw_records/run_c5086115d2eb/raw_local_6d47f1c0b03942f8.json",
+        "content_hash": "ab471a1e990b959fd619a4a609e61d5f9668766a0410bf07b3786c428c2e653e",
+        "stored_at": "2026-03-20T07:08:04.036910+00:00",
+        "audit_ref": ".runtime/wp11/audit/run_c5086115d2eb/audit_3686271735f54e15.json"
+      },
+      {
+        "trace_id": "trace_d60f3359a3fb46dd",
+        "run_id": "run_c5086115d2eb",
+        "query_run_id": "qrun_0966fb3b5934",
+        "source_name": "github_advisories",
+        "stored_via": "local_manifest",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_0966fb3b5934_d95b1940ad07.json",
+        "manifest_uri": ".runtime/wp11/raw_records/run_c5086115d2eb/raw_local_4cfda2af35804ba7.json",
+        "content_hash": "d95b1940ad0787e48ad744f19ec2161740e0167606c326c5c31b12aea40dd81a",
+        "stored_at": "2026-03-20T07:08:04.036910+00:00",
+        "audit_ref": ".runtime/wp11/audit/run_c5086115d2eb/audit_812713b141a143b8.json"
+      },
+      {
+        "trace_id": "trace_d60f3359a3fb46dd",
+        "run_id": "run_c5086115d2eb",
+        "query_run_id": "qrun_23240aba0da0",
+        "source_name": "hackernews",
+        "stored_via": "local_manifest",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_23240aba0da0_0b2fe799aee8.json",
+        "manifest_uri": ".runtime/wp11/raw_records/run_c5086115d2eb/raw_local_de9c65474d7045f5.json",
+        "content_hash": "0b2fe799aee840ea64bb8f67a68a6f3460fcb050a02af0f213160ec0aff6997f",
+        "stored_at": "2026-03-20T07:08:04.038278+00:00",
+        "audit_ref": ".runtime/wp11/audit/run_c5086115d2eb/audit_c313a4f109c440bc.json"
+      },
+      {
+        "trace_id": "trace_d60f3359a3fb46dd",
+        "run_id": "run_c5086115d2eb",
+        "query_run_id": "qrun_840ed9715f12",
+        "source_name": "reddit",
+        "stored_via": "local_manifest",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_840ed9715f12_47a203a05fcc.json",
+        "manifest_uri": ".runtime/wp11/raw_records/run_c5086115d2eb/raw_local_daa9e00a01ae42f2.json",
+        "content_hash": "47a203a05fccae6d64300112f9bccdc52e47f17358fbccbf597deb1b3a63c4f0",
+        "stored_at": "2026-03-20T07:08:04.040282+00:00",
+        "audit_ref": ".runtime/wp11/audit/run_c5086115d2eb/audit_4fc10ff644184693.json"
+      },
+      {
+        "trace_id": "trace_d60f3359a3fb46dd",
+        "run_id": "run_c5086115d2eb",
+        "query_run_id": "qrun_b65c723a103c",
+        "source_name": "arxiv",
+        "stored_via": "local_manifest",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_b65c723a103c_2ab09e02a62f.json",
+        "manifest_uri": ".runtime/wp11/raw_records/run_c5086115d2eb/raw_local_1d63cff0111448c6.json",
+        "content_hash": "2ab09e02a62f5bec9ad31ea8dc4bac080dd83284ab7e723ad023f197a5863da6",
+        "stored_at": "2026-03-20T07:08:04.040282+00:00",
+        "audit_ref": ".runtime/wp11/audit/run_c5086115d2eb/audit_cf54d36cdf874ea0.json"
+      },
+      {
+        "trace_id": "trace_d60f3359a3fb46dd",
+        "run_id": "run_c5086115d2eb",
+        "query_run_id": "qrun_aa5421acfa35",
+        "source_name": "mitre_attack",
+        "stored_via": "local_manifest",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_aa5421acfa35_1c84d0e785f7.json",
+        "manifest_uri": ".runtime/wp11/raw_records/run_c5086115d2eb/raw_local_9c964f604f834ef8.json",
+        "content_hash": "1c84d0e785f79dbcac8d30e950ebe2b85bef99d21da2e53845af77afd3e4bf79",
+        "stored_at": "2026-03-20T07:08:04.041282+00:00",
+        "audit_ref": ".runtime/wp11/audit/run_c5086115d2eb/audit_a9a85b28b7d14431.json"
+      },
+      {
+        "trace_id": "trace_d60f3359a3fb46dd",
+        "run_id": "run_c5086115d2eb",
+        "query_run_id": "qrun_894b5c1d6dd9",
+        "source_name": "nvd",
+        "stored_via": "local_manifest",
+        "payload_uri": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_894b5c1d6dd9_135da982ebe5.json",
+        "manifest_uri": ".runtime/wp11/raw_records/run_c5086115d2eb/raw_local_9c8274c6d39a48a4.json",
+        "content_hash": "135da982ebe520330ab34dd0c7b175ba0b1d55da7b39929749da5ddf7f305036",
+        "stored_at": "2026-03-20T07:08:04.042282+00:00",
+        "audit_ref": ".runtime/wp11/audit/run_c5086115d2eb/audit_e9211dc157f34b4c.json"
+      }
+    ]
+  0.2ms
+········································································
+
+✓ [10] assess_collection_yield
+  collection_yield_summary:     [
+      {
+        "source_name": "cisa_kev",
+        "total_queries": 1,
+        "total_results": 1,
+        "total_parsed": 1,
+        "low_yield": false,
+        "high_noise": false,
+        "reflection_recommended": false,
+        "recommended_actions": [],
+        "reflection_evidence_summary": "Telemetry suggests query is productive or near saturation."
+      },
+      {
+        "source_name": "github_advisories",
+        "total_queries": 1,
+        "total_results": 1,
+        "total_parsed": 1,
+        "low_yield": false,
+        "high_noise": false,
+        "reflection_recommended": false,
+        "recommended_actions": [],
+        "reflection_evidence_summary": "Telemetry suggests query is productive or near saturation."
+      },
+      {
+        "source_name": "hackernews",
+        "total_queries": 1,
+        "total_results": 1,
+        "total_parsed": 1,
+        "low_yield": false,
+        "high_noise": false,
+        "reflection_recommended": false,
+        "recommended_actions": [],
+        "reflection_evidence_summary": "Telemetry suggests query is productive or near saturation."
+      },
+      {
+        "source_name": "reddit",
+        "total_queries": 1,
+        "total_results": 1,
+        "total_parsed": 1,
+        "low_yield": false,
+        "high_noise": false,
+        "reflection_recommended": false,
+        "recommended_actions": [],
+        "reflection_evidence_summary": "Telemetry suggests query is productive or near saturation."
+      },
+      {
+        "source_name": "arxiv",
+        "total_queries": 1,
+        "total_results": 1,
+        "total_parsed": 1,
+        "low_yield": false,
+        "high_noise": false,
+        "reflection_recommended": false,
+        "recommended_actions": [],
+        "reflection_evidence_summary": "Telemetry suggests query is productive or near saturation."
+      },
+      {
+        "source_name": "mitre_attack",
+        "total_queries": 1,
+        "total_results": 1,
+        "total_parsed": 1,
+        "low_yield": false,
+        "high_noise": false,
+        "reflection_recommended": false,
+        "recommended_actions": [],
+        "reflection_evidence_summary": "Telemetry suggests query is productive or near saturation."
+      },
+      {
+        "source_name": "nvd",
+        "total_queries": 1,
+        "total_results": 1,
+        "total_parsed": 1,
+        "low_yield": false,
+        "high_noise": false,
+        "reflection_recommended": false,
+        "recommended_actions": [],
+        "reflection_evidence_summary": "Telemetry suggests query is productive or near saturation."
+      }
+    ]
+  reflection_needed:     false
+  reflection_rationale:     ""
+  0.2ms
+········································································
+
+✓ [11] reflect_search_strategy
+  llm_reflection_audits:     [
+      {
+        "reflection_round": 0,
+        "strategy_requested": "llm_optional",
+        "strategy_executed": "rules_only_degraded",
+        "llm_model": "qwen3.5-plus",
+        "prompt_version": "v1.0-llm-search-reflection",
+        "should_retry": false,
+        "stop_reason": "no_rewrite_needed",
+        "diagnosis": "saturated",
+        "expected_gain_dimension": "balanced",
+        "confidence": 0.9,
+        "rewritten_query_count": 0,
+        "rewritten_sources": [],
+        "evidence_summary": "No telemetry pattern justified another rewrite round.",
+        "fallback_reason": "Error code: 400 - {'error': {'message': \"<400> InternalError.Algo.InvalidParameter: 'messages' must contain the word 'json' in some form, to use 'response_format' of type 'json_object'.\", 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_parameter_error'}, 'id': 'chatcmpl-344690f6-2350-9036-97cb-076aeb99c07d', 'request_id': '344690f6-2350-9036-97cb-076aeb99c07d'}",
+        "invoked_at": "2026-03-20T07:08:04.045282+00:00"
+      }
+    ]
+  reflection_round:     0
+  reflection_needed:     false
+  0.1ms
+········································································
+
+✓ [12] parse_and_standardize
+  standardized_items:     [
+      {
+        "raw_id": "raw_local_6d47f1c0b03942f8",
+        "attack_code": "ATTACK-C2AEADDA25",
+        "canonical_name": "Stub CISA KEV entry for AI-adjacent stack",
+        "attack_family": "generic_ai_security",
+        "severity_level": "medium",
+        "summary": "Stub collection result for query 'langchain'.",
+        "description": "{\"published_at\": \"2026-03-20T07:08:04.027908+00:00\", \"query\": \"langchain\", \"query_intent\": \"broad_recall\", \"query_tokens\": [\"langchain\"], \"request_profile\": \"local_filter_scan\", \"source\": \"cisa_kev\", \"transformed_query\": \"langchain\"}",
+        "exploit_preconditions": null,
+        "impact_scope": "ai_component_or_agent_stack",
+        "first_seen_at": "2026-03-20T07:08:04.027908+00:00",
+        "last_seen_at": "2026-03-20T07:08:04.027908+00:00",
+        "stix_type": "attack-pattern",
+        "stix_payload": {
+          "type": "attack-pattern",
+          "spec_version": "2.1",
+          "id": "attack-pattern--5faf74d1a4e5ec9d4373f3a748b3028e",
+          "name": "Stub CISA KEV entry for AI-adjacent stack",
+          "description": "{\"published_at\": \"2026-03-20T07:08:04.027908+00:00\", \"query\": \"langchain\", \"query_intent\": \"broad_recall\", \"query_tokens\": [\"langchain\"], \"request_profile\": \"local_filter_scan\", \"source\": \"cisa_kev\", \"transformed_query\": \"langchain\"}",
+          "labels": [
+            "OWASP-LLM-09"
+          ],
+          "external_references": [
+            {
+              "source_name": "cisa_kev",
+              "url": "stub://cisa_kev/qrun_90587890799e"
+            }
+          ],
+          "x_ai_bom_mentions": [
+            {
+              "mentioned_name": "langchain",
+              "mentioned_vendor": "LangChain",
+              "mentioned_version": null,
+              "confidence_score": 0.72,
+              "reason_code": "name_mention"
+            }
+          ]
+        },
+        "evidence_snippet": "Stub CISA KEV entry for AI-adjacent stack Stub collection result for query 'langchain'. {\"published_at\": \"2026-03-20T07:08:04.027908+00:00\", \"query\": \"langchain\", \"query_intent\": \"broad_recall\", \"query_tokens\": [\"langchain\"], \"request_profile\": \"local_filter_scan\", \"source\": \"cis",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_90587890799e_ab471a1e990b.json",
+        "evidence_refs": [
+          "stub://cisa_kev/qrun_90587890799e",
+          ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_90587890799e_ab471a1e990b.json"
+        ],
+        "extraction_reason": "Standardized from cisa_kev; defaulted to generic_ai_security due to missing strong family signals; taxonomy_candidates=1; bom_mentions=1",
+        "source_confidence": 0.92,
+        "extraction_confidence": 0.72,
+        "taxonomy_items": [
+          {
+            "taxonomy_type": "OWASP_LLM",
+            "taxonomy_code": "OWASP-LLM-09",
+            "taxonomy_name": "Overreliance",
+            "confidence_score": 0.35,
+            "is_primary": true
+          }
+        ],
+        "cvss_hint": {
+          "cvss_version": "3.1",
+          "base_score": 6.4,
+          "severity_label": "Medium",
+          "score_origin": "estimated",
+          "vector_string": null
+        },
+        "bom_mentions": [
+          {
+            "mentioned_name": "langchain",
+            "mentioned_vendor": "LangChain",
+            "mentioned_version": null,
+            "confidence_score": 0.72,
+            "reason_code": "name_mention"
+          }
+        ],
+        "source_metadata": {
+          "source_name": "cisa_kev",
+          "query_run_id": "qrun_90587890799e",
+          "external_id": "cisa_kev-90799e",
+          "cve_refs": [],
+          "standardization_strategy": "rules_only_degraded",
+          "llm_model": null,
+          "prompt_version": null
+        },
+        "field_confidence": {
+          "summary": 0.72,
+          "description": 0.72,
+          "taxonomy_items": 0.67,
+          "cvss_hint": 0.82,
+          "bom_mentions": 0.8
+        },
+        "conflict_flags": [],
+        "validation_findings": [],
+        "normalization_trace": [
+          "source_specific_projection=[]",
+          "attack_family=generic_ai_security",
+          "severity_level=medium"
+        ]
+      },
+      {
+        "raw_id": "raw_local_4cfda2af35804ba7",
+        "attack_code": "ATTACK-28549945E8",
+        "canonical_name": "Stub GitHub advisory affecting LangChain-like package",
+        "attack_family": "prompt_injection",
+        "severity_level": "medium",
+        "summary": "Stub collection result for query 'langchain prompt injection'.",
+        "description": "{\"published_at\": \"2026-03-20T07:08:04.029910+00:00\", \"query\": \"langchain prompt injection\", \"query_intent\": \"broad_recall\", \"query_tokens\": [\"langchain\", \"prompt\", \"injection\"], \"request_profile\": \"github_security_search\", \"source\": \"github_advisories\", \"transformed_query\": \"langchain prompt injection\"}",
+        "exploit_preconditions": null,
+        "impact_scope": "ai_component_or_agent_stack",
+        "first_seen_at": "2026-03-20T07:08:04.029910+00:00",
+        "last_seen_at": "2026-03-20T07:08:04.029910+00:00",
+        "stix_type": "attack-pattern",
+        "stix_payload": {
+          "type": "attack-pattern",
+          "spec_version": "2.1",
+          "id": "attack-pattern--a88ee143a9e15f8d3c2bc3a31b1c6349",
+          "name": "Stub GitHub advisory affecting LangChain-like package",
+          "description": "{\"published_at\": \"2026-03-20T07:08:04.029910+00:00\", \"query\": \"langchain prompt injection\", \"query_intent\": \"broad_recall\", \"query_tokens\": [\"langchain\", \"prompt\", \"injection\"], \"request_profile\": \"github_security_search\", \"source\": \"github_advisories\", \"transformed_query\": \"langchain prompt injection\"}",
+          "labels": [
+            "OWASP-LLM-01",
+            "CWE-20"
+          ],
+          "external_references": [
+            {
+              "source_name": "github_advisories",
+              "url": "stub://github_advisories/qrun_0966fb3b5934"
+            }
+          ],
+          "x_ai_bom_mentions": [
+            {
+              "mentioned_name": "langchain",
+              "mentioned_vendor": "LangChain",
+              "mentioned_version": null,
+              "confidence_score": 0.72,
+              "reason_code": "name_mention"
+            }
+          ]
+        },
+        "evidence_snippet": "Stub GitHub advisory affecting LangChain-like package Stub collection result for query 'langchain prompt injection'. {\"published_at\": \"2026-03-20T07:08:04.029910+00:00\", \"query\": \"langchain prompt injection\", \"query_intent\": \"broad_recall\", \"query_tokens\": [\"langchain\", \"prompt\",",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_0966fb3b5934_d95b1940ad07.json",
+        "evidence_refs": [
+          "stub://github_advisories/qrun_0966fb3b5934",
+          ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_0966fb3b5934_d95b1940ad07.json"
+        ],
+        "extraction_reason": "Standardized from github_advisories; matched attack family keywords for prompt_injection; taxonomy_candidates=2; bom_mentions=1",
+        "source_confidence": 0.84,
+        "extraction_confidence": 0.72,
+        "taxonomy_items": [
+          {
+            "taxonomy_type": "OWASP_LLM",
+            "taxonomy_code": "OWASP-LLM-01",
+            "taxonomy_name": "Prompt Injection",
+            "confidence_score": 0.78,
+            "is_primary": true
+          },
+          {
+            "taxonomy_type": "CWE",
+            "taxonomy_code": "CWE-20",
+            "taxonomy_name": "Improper Input Validation",
+            "confidence_score": 0.78,
+            "is_primary": false
+          }
+        ],
+        "cvss_hint": {
+          "cvss_version": "3.1",
+          "base_score": 6.4,
+          "severity_label": "Medium",
+          "score_origin": "estimated",
+          "vector_string": null
+        },
+        "bom_mentions": [
+          {
+            "mentioned_name": "langchain",
+            "mentioned_vendor": "LangChain",
+            "mentioned_version": null,
+            "confidence_score": 0.72,
+            "reason_code": "name_mention"
+          }
+        ],
+        "source_metadata": {
+          "source_name": "github_advisories",
+          "query_run_id": "qrun_0966fb3b5934",
+          "external_id": "github_advisories-3b5934",
+          "cve_refs": [],
+          "standardization_strategy": "rules_only_degraded",
+          "llm_model": null,
+          "prompt_version": null
+        },
+        "field_confidence": {
+          "summary": 0.72,
+          "description": 0.72,
+          "taxonomy_items": 0.79,
+          "cvss_hint": 0.82,
+          "bom_mentions": 0.8
+        },
+        "conflict_flags": [],
+        "validation_findings": [],
+        "normalization_trace": [
+          "source_specific_projection=['severity', 'summary']",
+          "attack_family=prompt_injection",
+          "severity_level=medium"
+        ]
+      },
+      {
+        "raw_id": "raw_local_de9c65474d7045f5",
+        "attack_code": "ATTACK-BE3E5081BE",
+        "canonical_name": "Stub HN thread on AI system vulnerabilities",
+        "attack_family": "generic_ai_security",
+        "severity_level": "low",
+        "summary": "Stub collection result for query 'AI security vulnerability'.",
+        "description": "{\"published_at\": \"2026-03-20T07:08:04.030910+00:00\", \"query\": \"AI security vulnerability\", \"query_intent\": \"weak_signal_probe\", \"query_tokens\": [\"ai\", \"security\", \"vulnerability\", \"security\", \"incident\"], \"request_profile\": \"hn_algolia_search\", \"source\": \"hackernews\", \"transformed_query\": \"AI security vulnerability security incident\"}",
+        "exploit_preconditions": null,
+        "impact_scope": "ai_component_or_agent_stack",
+        "first_seen_at": "2026-03-20T07:08:04.030910+00:00",
+        "last_seen_at": "2026-03-20T07:08:04.030910+00:00",
+        "stix_type": "attack-pattern",
+        "stix_payload": {
+          "type": "attack-pattern",
+          "spec_version": "2.1",
+          "id": "attack-pattern--77a7776daf290d898e1bbfc41868dcac",
+          "name": "Stub HN thread on AI system vulnerabilities",
+          "description": "{\"published_at\": \"2026-03-20T07:08:04.030910+00:00\", \"query\": \"AI security vulnerability\", \"query_intent\": \"weak_signal_probe\", \"query_tokens\": [\"ai\", \"security\", \"vulnerability\", \"security\", \"incident\"], \"request_profile\": \"hn_algolia_search\", \"source\": \"hackernews\", \"transformed_query\": \"AI security vulnerability security incident\"}",
+          "labels": [
+            "OWASP-LLM-09"
+          ],
+          "external_references": [
+            {
+              "source_name": "hackernews",
+              "url": "stub://hackernews/qrun_23240aba0da0"
+            }
+          ],
+          "x_ai_bom_mentions": []
+        },
+        "evidence_snippet": "Stub HN thread on AI system vulnerabilities Stub collection result for query 'AI security vulnerability'. {\"published_at\": \"2026-03-20T07:08:04.030910+00:00\", \"query\": \"AI security vulnerability\", \"query_intent\": \"weak_signal_probe\", \"query_tokens\": [\"ai\", \"security\", \"vulnerabil",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_23240aba0da0_0b2fe799aee8.json",
+        "evidence_refs": [
+          "stub://hackernews/qrun_23240aba0da0",
+          ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_23240aba0da0_0b2fe799aee8.json"
+        ],
+        "extraction_reason": "Standardized from hackernews; defaulted to generic_ai_security due to missing strong family signals; taxonomy_candidates=1; bom_mentions=0",
+        "source_confidence": 0.68,
+        "extraction_confidence": 0.72,
+        "taxonomy_items": [
+          {
+            "taxonomy_type": "OWASP_LLM",
+            "taxonomy_code": "OWASP-LLM-09",
+            "taxonomy_name": "Overreliance",
+            "confidence_score": 0.35,
+            "is_primary": true
+          }
+        ],
+        "cvss_hint": {
+          "cvss_version": "3.1",
+          "base_score": 3.7,
+          "severity_label": "Low",
+          "score_origin": "estimated",
+          "vector_string": null
+        },
+        "bom_mentions": [],
+        "source_metadata": {
+          "source_name": "hackernews",
+          "query_run_id": "qrun_23240aba0da0",
+          "external_id": "hackernews-ba0da0",
+          "cve_refs": [],
+          "standardization_strategy": "rules_only_degraded",
+          "llm_model": null,
+          "prompt_version": null
+        },
+        "field_confidence": {
+          "summary": 0.72,
+          "description": 0.72,
+          "taxonomy_items": 0.67,
+          "cvss_hint": 0.82,
+          "bom_mentions": 0.3
+        },
+        "conflict_flags": [],
+        "validation_findings": [],
+        "normalization_trace": [
+          "source_specific_projection=['community_signal', 'contains_question', 'possible_exploit_discussion']",
+          "attack_family=generic_ai_security",
+          "severity_level=low"
+        ]
+      },
+      {
+        "raw_id": "raw_local_daa9e00a01ae42f2",
+        "attack_code": "ATTACK-DC580D43E3",
+        "canonical_name": "Stub Reddit discussion on jailbreak behavior",
+        "attack_family": "jailbreak",
+        "severity_level": "low",
+        "summary": "Stub collection result for query 'LLM jailbreak'.",
+        "description": "{\"published_at\": \"2026-03-20T07:08:04.030910+00:00\", \"query\": \"LLM jailbreak\", \"query_intent\": \"weak_signal_probe\", \"query_tokens\": [\"llm\", \"jailbreak\", \"or\", \"weird\", \"or\", \"bypass\", \"or\", \"jailbreak\"], \"request_profile\": \"reddit_rss_search\", \"source\": \"reddit\", \"transformed_query\": \"LLM jailbreak OR weird OR bypass OR jailbreak\"}",
+        "exploit_preconditions": null,
+        "impact_scope": "ai_component_or_agent_stack",
+        "first_seen_at": "2026-03-20T07:08:04.030910+00:00",
+        "last_seen_at": "2026-03-20T07:08:04.030910+00:00",
+        "stix_type": "attack-pattern",
+        "stix_payload": {
+          "type": "attack-pattern",
+          "spec_version": "2.1",
+          "id": "attack-pattern--8459076cd74535a382c165a4a61fb4dd",
+          "name": "Stub Reddit discussion on jailbreak behavior",
+          "description": "{\"published_at\": \"2026-03-20T07:08:04.030910+00:00\", \"query\": \"LLM jailbreak\", \"query_intent\": \"weak_signal_probe\", \"query_tokens\": [\"llm\", \"jailbreak\", \"or\", \"weird\", \"or\", \"bypass\", \"or\", \"jailbreak\"], \"request_profile\": \"reddit_rss_search\", \"source\": \"reddit\", \"transformed_query\": \"LLM jailbreak OR weird OR bypass OR jailbreak\"}",
+          "labels": [
+            "OWASP-LLM-09"
+          ],
+          "external_references": [
+            {
+              "source_name": "reddit",
+              "url": "stub://reddit/qrun_840ed9715f12"
+            }
+          ],
+          "x_ai_bom_mentions": []
+        },
+        "evidence_snippet": "Stub Reddit discussion on jailbreak behavior Stub collection result for query 'LLM jailbreak'. {\"published_at\": \"2026-03-20T07:08:04.030910+00:00\", \"query\": \"LLM jailbreak\", \"query_intent\": \"weak_signal_probe\", \"query_tokens\": [\"llm\", \"jailbreak\", \"or\", \"weird\", \"or\", \"bypass\", \"",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_840ed9715f12_47a203a05fcc.json",
+        "evidence_refs": [
+          "stub://reddit/qrun_840ed9715f12",
+          ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_840ed9715f12_47a203a05fcc.json"
+        ],
+        "extraction_reason": "Standardized from reddit; matched attack family keywords for jailbreak; taxonomy_candidates=1; bom_mentions=0",
+        "source_confidence": 0.68,
+        "extraction_confidence": 0.72,
+        "taxonomy_items": [
+          {
+            "taxonomy_type": "OWASP_LLM",
+            "taxonomy_code": "OWASP-LLM-09",
+            "taxonomy_name": "Overreliance",
+            "confidence_score": 0.35,
+            "is_primary": true
+          }
+        ],
+        "cvss_hint": {
+          "cvss_version": "3.1",
+          "base_score": 3.7,
+          "severity_label": "Low",
+          "score_origin": "estimated",
+          "vector_string": null
+        },
+        "bom_mentions": [],
+        "source_metadata": {
+          "source_name": "reddit",
+          "query_run_id": "qrun_840ed9715f12",
+          "external_id": "reddit-715f12",
+          "cve_refs": [],
+          "standardization_strategy": "rules_only_degraded",
+          "llm_model": null,
+          "prompt_version": null
+        },
+        "field_confidence": {
+          "summary": 0.72,
+          "description": 0.72,
+          "taxonomy_items": 0.67,
+          "cvss_hint": 0.82,
+          "bom_mentions": 0.3
+        },
+        "conflict_flags": [],
+        "validation_findings": [],
+        "normalization_trace": [
+          "source_specific_projection=['community_signal', 'contains_question', 'possible_exploit_discussion']",
+          "attack_family=jailbreak",
+          "severity_level=low"
+        ]
+      },
+      {
+        "raw_id": "raw_local_1d63cff0111448c6",
+        "attack_code": "ATTACK-934E2F0EC6",
+        "canonical_name": "Stub arXiv paper on prompt injection attacks",
+        "attack_family": "prompt_injection",
+        "severity_level": "low",
+        "summary": "Stub collection result for query 'prompt injection jailbreak language model'.",
+        "description": "{\"published_at\": \"2026-03-20T07:08:04.033910+00:00\", \"query\": \"prompt injection jailbreak language model\", \"query_intent\": \"evidence_corroboration\", \"query_tokens\": [\"all:\", \"prompt\", \"injection\", \"jailbreak\", \"language\", \"model\"], \"request_profile\": \"arxiv_atom_search\", \"source\": \"arxiv\", \"transformed_query\": \"all:\\\"prompt injection jailbreak language model\\\"\"}",
+        "exploit_preconditions": null,
+        "impact_scope": "ai_component_or_agent_stack",
+        "first_seen_at": "2026-03-20T07:08:04.033910+00:00",
+        "last_seen_at": "2026-03-20T07:08:04.033910+00:00",
+        "stix_type": "attack-pattern",
+        "stix_payload": {
+          "type": "attack-pattern",
+          "spec_version": "2.1",
+          "id": "attack-pattern--d6fcbe13598d610d9e326f00c45811d1",
+          "name": "Stub arXiv paper on prompt injection attacks",
+          "description": "{\"published_at\": \"2026-03-20T07:08:04.033910+00:00\", \"query\": \"prompt injection jailbreak language model\", \"query_intent\": \"evidence_corroboration\", \"query_tokens\": [\"all:\", \"prompt\", \"injection\", \"jailbreak\", \"language\", \"model\"], \"request_profile\": \"arxiv_atom_search\", \"source\": \"arxiv\", \"transformed_query\": \"all:\\\"prompt injection jailbreak language model\\\"\"}",
+          "labels": [
+            "OWASP-LLM-01",
+            "CWE-20"
+          ],
+          "external_references": [
+            {
+              "source_name": "arxiv",
+              "url": "stub://arxiv/qrun_b65c723a103c"
+            }
+          ],
+          "x_ai_bom_mentions": []
+        },
+        "evidence_snippet": "Stub arXiv paper on prompt injection attacks Stub collection result for query 'prompt injection jailbreak language model'. {\"published_at\": \"2026-03-20T07:08:04.033910+00:00\", \"query\": \"prompt injection jailbreak language model\", \"query_intent\": \"evidence_corroboration\", \"query_t",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_b65c723a103c_2ab09e02a62f.json",
+        "evidence_refs": [
+          "stub://arxiv/qrun_b65c723a103c",
+          ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_b65c723a103c_2ab09e02a62f.json"
+        ],
+        "extraction_reason": "Standardized from arxiv; matched attack family keywords for prompt_injection; taxonomy_candidates=2; bom_mentions=0",
+        "source_confidence": 0.84,
+        "extraction_confidence": 0.72,
+        "taxonomy_items": [
+          {
+            "taxonomy_type": "OWASP_LLM",
+            "taxonomy_code": "OWASP-LLM-01",
+            "taxonomy_name": "Prompt Injection",
+            "confidence_score": 0.78,
+            "is_primary": true
+          },
+          {
+            "taxonomy_type": "CWE",
+            "taxonomy_code": "CWE-20",
+            "taxonomy_name": "Improper Input Validation",
+            "confidence_score": 0.78,
+            "is_primary": false
+          }
+        ],
+        "cvss_hint": {
+          "cvss_version": "3.1",
+          "base_score": 3.7,
+          "severity_label": "Low",
+          "score_origin": "estimated",
+          "vector_string": null
+        },
+        "bom_mentions": [],
+        "source_metadata": {
+          "source_name": "arxiv",
+          "query_run_id": "qrun_b65c723a103c",
+          "external_id": "arxiv-3a103c",
+          "cve_refs": [],
+          "standardization_strategy": "rules_only_degraded",
+          "llm_model": null,
+          "prompt_version": null
+        },
+        "field_confidence": {
+          "summary": 0.72,
+          "description": 0.72,
+          "taxonomy_items": 0.79,
+          "cvss_hint": 0.82,
+          "bom_mentions": 0.3
+        },
+        "conflict_flags": [],
+        "validation_findings": [],
+        "normalization_trace": [
+          "source_specific_projection=['arxiv_categories']",
+          "attack_family=prompt_injection",
+          "severity_level=low"
+        ]
+      },
+      {
+        "raw_id": "raw_local_9c964f604f834ef8",
+        "attack_code": "ATTACK-14EE08C26F",
+        "canonical_name": "Stub ATT&CK technique update for agent misuse",
+        "attack_family": "agent_hijack",
+        "severity_level": "medium",
+        "summary": "Stub collection result for query 'agent hijack'.",
+        "description": "{\"published_at\": \"2026-03-20T07:08:04.032910+00:00\", \"query\": \"agent hijack\", \"query_intent\": \"broad_recall\", \"query_tokens\": [\"agent\", \"hijack\"], \"request_profile\": \"local_filter_scan\", \"source\": \"mitre_attack\", \"transformed_query\": \"agent hijack\"}",
+        "exploit_preconditions": null,
+        "impact_scope": "ai_component_or_agent_stack",
+        "first_seen_at": "2026-03-20T07:08:04.032910+00:00",
+        "last_seen_at": "2026-03-20T07:08:04.032910+00:00",
+        "stix_type": "attack-pattern",
+        "stix_payload": {
+          "type": "attack-pattern",
+          "spec_version": "2.1",
+          "id": "attack-pattern--04059ae40878576da9c97cfba9b7c2e3",
+          "name": "Stub ATT&CK technique update for agent misuse",
+          "description": "{\"published_at\": \"2026-03-20T07:08:04.032910+00:00\", \"query\": \"agent hijack\", \"query_intent\": \"broad_recall\", \"query_tokens\": [\"agent\", \"hijack\"], \"request_profile\": \"local_filter_scan\", \"source\": \"mitre_attack\", \"transformed_query\": \"agent hijack\"}",
+          "labels": [
+            "OWASP-LLM-07"
+          ],
+          "external_references": [
+            {
+              "source_name": "mitre_attack",
+              "url": "stub://mitre_attack/qrun_aa5421acfa35"
+            }
+          ],
+          "x_ai_bom_mentions": []
+        },
+        "evidence_snippet": "Stub ATT&CK technique update for agent misuse Stub collection result for query 'agent hijack'. {\"published_at\": \"2026-03-20T07:08:04.032910+00:00\", \"query\": \"agent hijack\", \"query_intent\": \"broad_recall\", \"query_tokens\": [\"agent\", \"hijack\"], \"request_profile\": \"local_filter_scan\"",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_aa5421acfa35_1c84d0e785f7.json",
+        "evidence_refs": [
+          "stub://mitre_attack/qrun_aa5421acfa35",
+          ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_aa5421acfa35_1c84d0e785f7.json"
+        ],
+        "extraction_reason": "Standardized from mitre_attack; matched attack family keywords for agent_hijack; taxonomy_candidates=1; bom_mentions=0",
+        "source_confidence": 0.92,
+        "extraction_confidence": 0.72,
+        "taxonomy_items": [
+          {
+            "taxonomy_type": "OWASP_LLM",
+            "taxonomy_code": "OWASP-LLM-07",
+            "taxonomy_name": "Insecure Plugin Design",
+            "confidence_score": 0.78,
+            "is_primary": true
+          }
+        ],
+        "cvss_hint": {
+          "cvss_version": "3.1",
+          "base_score": 6.4,
+          "severity_label": "Medium",
+          "score_origin": "estimated",
+          "vector_string": null
+        },
+        "bom_mentions": [],
+        "source_metadata": {
+          "source_name": "mitre_attack",
+          "query_run_id": "qrun_aa5421acfa35",
+          "external_id": "mitre_attack-acfa35",
+          "cve_refs": [],
+          "standardization_strategy": "rules_only_degraded",
+          "llm_model": null,
+          "prompt_version": null
+        },
+        "field_confidence": {
+          "summary": 0.72,
+          "description": 0.72,
+          "taxonomy_items": 0.67,
+          "cvss_hint": 0.82,
+          "bom_mentions": 0.3
+        },
+        "conflict_flags": [],
+        "validation_findings": [],
+        "normalization_trace": [
+          "source_specific_projection=[]",
+          "attack_family=agent_hijack",
+          "severity_level=medium"
+        ]
+      },
+      {
+        "raw_id": "raw_local_9c8274c6d39a48a4",
+        "attack_code": "ATTACK-E7126F49CB",
+        "canonical_name": "Stub CVE advisory for AI component misuse",
+        "attack_family": "prompt_injection",
+        "severity_level": "medium",
+        "summary": "Stub collection result for query 'prompt injection langchain'.",
+        "description": "{\"published_at\": \"2026-03-20T07:08:04.032910+00:00\", \"query\": \"prompt injection langchain\", \"query_intent\": \"broad_recall\", \"query_tokens\": [\"prompt\", \"injection\", \"langchain\"], \"request_profile\": \"nvd_keyword_search\", \"source\": \"nvd\", \"transformed_query\": \"prompt injection langchain\"}",
+        "exploit_preconditions": null,
+        "impact_scope": "ai_component_or_agent_stack",
+        "first_seen_at": "2026-03-20T07:08:04.032910+00:00",
+        "last_seen_at": "2026-03-20T07:08:04.032910+00:00",
+        "stix_type": "attack-pattern",
+        "stix_payload": {
+          "type": "attack-pattern",
+          "spec_version": "2.1",
+          "id": "attack-pattern--cd3f3874cbd3142f96dde07d623cad9a",
+          "name": "Stub CVE advisory for AI component misuse",
+          "description": "{\"published_at\": \"2026-03-20T07:08:04.032910+00:00\", \"query\": \"prompt injection langchain\", \"query_intent\": \"broad_recall\", \"query_tokens\": [\"prompt\", \"injection\", \"langchain\"], \"request_profile\": \"nvd_keyword_search\", \"source\": \"nvd\", \"transformed_query\": \"prompt injection langchain\"}",
+          "labels": [
+            "OWASP-LLM-01",
+            "CWE-20"
+          ],
+          "external_references": [
+            {
+              "source_name": "nvd",
+              "url": "stub://nvd/qrun_894b5c1d6dd9"
+            }
+          ],
+          "x_ai_bom_mentions": [
+            {
+              "mentioned_name": "langchain",
+              "mentioned_vendor": "LangChain",
+              "mentioned_version": null,
+              "confidence_score": 0.72,
+              "reason_code": "name_mention"
+            }
+          ]
+        },
+        "evidence_snippet": "Stub CVE advisory for AI component misuse Stub collection result for query 'prompt injection langchain'. {\"published_at\": \"2026-03-20T07:08:04.032910+00:00\", \"query\": \"prompt injection langchain\", \"query_intent\": \"broad_recall\", \"query_tokens\": [\"prompt\", \"injection\", \"langchain\"",
+        "artifact_ref": ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_894b5c1d6dd9_135da982ebe5.json",
+        "evidence_refs": [
+          "stub://nvd/qrun_894b5c1d6dd9",
+          ".runtime/wp11/raw_records/trace_d60f3359a3fb46dd/qrun_894b5c1d6dd9_135da982ebe5.json"
+        ],
+        "extraction_reason": "Standardized from nvd; matched attack family keywords for prompt_injection; taxonomy_candidates=2; bom_mentions=1",
+        "source_confidence": 0.92,
+        "extraction_confidence": 0.72,
+        "taxonomy_items": [
+          {
+            "taxonomy_type": "OWASP_LLM",
+            "taxonomy_code": "OWASP-LLM-01",
+            "taxonomy_name": "Prompt Injection",
+            "confidence_score": 0.78,
+            "is_primary": true
+          },
+          {
+            "taxonomy_type": "CWE",
+            "taxonomy_code": "CWE-20",
+            "taxonomy_name": "Improper Input Validation",
+            "confidence_score": 0.78,
+            "is_primary": false
+          }
+        ],
+        "cvss_hint": {
+          "cvss_version": "3.1",
+          "base_score": 6.4,
+          "severity_label": "Medium",
+          "score_origin": "estimated",
+          "vector_string": null
+        },
+        "bom_mentions": [
+          {
+            "mentioned_name": "langchain",
+            "mentioned_vendor": "LangChain",
+            "mentioned_version": null,
+            "confidence_score": 0.72,
+            "reason_code": "name_mention"
+          }
+        ],
+        "source_metadata": {
+          "source_name": "nvd",
+          "query_run_id": "qrun_894b5c1d6dd9",
+          "external_id": "nvd-1d6dd9",
+          "cve_refs": [],
+          "standardization_strategy": "rules_only_degraded",
+          "llm_model": null,
+          "prompt_version": null
+        },
+        "field_confidence": {
+          "summary": 0.72,
+          "description": 0.72,
+          "taxonomy_items": 0.79,
+          "cvss_hint": 0.82,
+          "bom_mentions": 0.8
+        },
+        "conflict_flags": [],
+        "validation_findings": [],
+        "normalization_trace": [
+          "source_specific_projection=['cvss_base_score', 'severity', 'summary', 'title']",
+          "attack_family=prompt_injection",
+          "severity_level=medium"
+        ]
+      }
+    ]
+  llm_standardization_audits:     [
+      {
+        "raw_id": "raw_local_6d47f1c0b03942f8",
+        "source_name": "cisa_kev",
+        "strategy_requested": "llm_optional",
+        "strategy_executed": "rules_only_degraded",
+        "llm_model": "qwen3.5-plus",
+        "prompt_version": "v2.0-llm-primary",
+        "llm_confidence": 0.0,
+        "llm_reason": "LLM failed (KeyError: 'Input to ChatPromptTemplate is missing variables {\\'mentioned_name=\"langchain\", component_layer=\"framework\"\\'}.  Expected: [\\'cleaned_payload\\', \\'mentioned_name=\"langchain\", component_layer=\"framewo)",
+        "fallback_reason": "LLM failed (KeyError: 'Input to ChatPromptTemplate is missing variables {\\'mentioned_name=\"langchain\", component_layer=\"framework\"\\'}.  Expected: [\\'cleaned_payload\\', \\'mentioned_name=\"langchain\", component_layer=\"framewo)",
+        "evidence_span_count": 0,
+        "field_confidence_count": 0,
+        "validation_finding_count": 0,
+        "conflict_flag_count": 0,
+        "rule_validation_passed": true,
+        "invoked_at": "2026-03-20T07:08:04.415554+00:00"
+      },
+      {
+        "raw_id": "raw_local_4cfda2af35804ba7",
+        "source_name": "github_advisories",
+        "strategy_requested": "llm_optional",
+        "strategy_executed": "rules_only_degraded",
+        "llm_model": "qwen3.5-plus",
+        "prompt_version": "v2.0-llm-primary",
+        "llm_confidence": 0.0,
+        "llm_reason": "LLM failed (KeyError: 'Input to ChatPromptTemplate is missing variables {\\'mentioned_name=\"langchain\", component_layer=\"framework\"\\'}.  Expected: [\\'cleaned_payload\\', \\'mentioned_name=\"langchain\", component_layer=\"framewo)",
+        "fallback_reason": "LLM failed (KeyError: 'Input to ChatPromptTemplate is missing variables {\\'mentioned_name=\"langchain\", component_layer=\"framework\"\\'}.  Expected: [\\'cleaned_payload\\', \\'mentioned_name=\"langchain\", component_layer=\"framewo)",
+        "evidence_span_count": 0,
+        "field_confidence_count": 0,
+        "validation_finding_count": 0,
+        "conflict_flag_count": 0,
+        "rule_validation_passed": true,
+        "invoked_at": "2026-03-20T07:08:04.423067+00:00"
+      },
+      {
+        "raw_id": "raw_local_de9c65474d7045f5",
+        "source_name": "hackernews",
+        "strategy_requested": "llm_optional",
+        "strategy_executed": "rules_only_degraded",
+        "llm_model": "qwen3.5-plus",
+        "prompt_version": "v2.0-llm-primary",
+        "llm_confidence": 0.0,
+        "llm_reason": "LLM failed (KeyError: 'Input to ChatPromptTemplate is missing variables {\\'mentioned_name=\"langchain\", component_layer=\"framework\"\\'}.  Expected: [\\'cleaned_payload\\', \\'mentioned_name=\"langchain\", component_layer=\"framewo)",
+        "fallback_reason": "LLM failed (KeyError: 'Input to ChatPromptTemplate is missing variables {\\'mentioned_name=\"langchain\", component_layer=\"framework\"\\'}.  Expected: [\\'cleaned_payload\\', \\'mentioned_name=\"langchain\", component_layer=\"framewo)",
+        "evidence_span_count": 0,
+        "field_confidence_count": 0,
+        "validation_finding_count": 0,
+        "conflict_flag_count": 0,
+        "rule_validation_passed": true,
+        "invoked_at": "2026-03-20T07:08:04.429572+00:00"
+      },
+      {
+        "raw_id": "raw_local_daa9e00a01ae42f2",
+        "source_name": "reddit",
+        "strategy_requested": "llm_optional",
+        "strategy_executed": "rules_only_degraded",
+        "llm_model": "qwen3.5-plus",
+        "prompt_version": "v2.0-llm-primary",
+        "llm_confidence": 0.0,
+        "llm_reason": "LLM failed (KeyError: 'Input to ChatPromptTemplate is missing variables {\\'mentioned_name=\"langchain\", component_layer=\"framework\"\\'}.  Expected: [\\'cleaned_payload\\', \\'mentioned_name=\"langchain\", component_layer=\"framewo)",
+        "fallback_reason": "LLM failed (KeyError: 'Input to ChatPromptTemplate is missing variables {\\'mentioned_name=\"langchain\", component_layer=\"framework\"\\'}.  Expected: [\\'cleaned_payload\\', \\'mentioned_name=\"langchain\", component_layer=\"framewo)",
+        "evidence_span_count": 0,
+        "field_confidence_count": 0,
+        "validation_finding_count": 0,
+        "conflict_flag_count": 0,
+        "rule_validation_passed": true,
+        "invoked_at": "2026-03-20T07:08:04.435571+00:00"
+      },
+      {
+        "raw_id": "raw_local_1d63cff0111448c6",
+        "source_name": "arxiv",
+        "strategy_requested": "llm_optional",
+        "strategy_executed": "rules_only_degraded",
+        "llm_model": "qwen3.5-plus",
+        "prompt_version": "v2.0-llm-primary",
+        "llm_confidence": 0.0,
+        "llm_reason": "LLM failed (KeyError: 'Input to ChatPromptTemplate is missing variables {\\'mentioned_name=\"langchain\", component_layer=\"framework\"\\'}.  Expected: [\\'cleaned_payload\\', \\'mentioned_name=\"langchain\", component_layer=\"framewo)",
+        "fallback_reason": "LLM failed (KeyError: 'Input to ChatPromptTemplate is missing variables {\\'mentioned_name=\"langchain\", component_layer=\"framework\"\\'}.  Expected: [\\'cleaned_payload\\', \\'mentioned_name=\"langchain\", component_layer=\"framewo)",
+        "evidence_span_count": 0,
+        "field_confidence_count": 0,
+        "validation_finding_count": 0,
+        "conflict_flag_count": 0,
+        "rule_validation_passed": true,
+        "invoked_at": "2026-03-20T07:08:04.444082+00:00"
+      },
+      {
+        "raw_id": "raw_local_9c964f604f834ef8",
+        "source_name": "mitre_attack",
+        "strategy_requested": "llm_optional",
+        "strategy_executed": "rules_only_degraded",
+        "llm_model": "qwen3.5-plus",
+        "prompt_version": "v2.0-llm-primary",
+        "llm_confidence": 0.0,
+        "llm_reason": "LLM failed (KeyError: 'Input to ChatPromptTemplate is missing variables {\\'mentioned_name=\"langchain\", component_layer=\"framework\"\\'}.  Expected: [\\'cleaned_payload\\', \\'mentioned_name=\"langchain\", component_layer=\"framewo)",
+        "fallback_reason": "LLM failed (KeyError: 'Input to ChatPromptTemplate is missing variables {\\'mentioned_name=\"langchain\", component_layer=\"framework\"\\'}.  Expected: [\\'cleaned_payload\\', \\'mentioned_name=\"langchain\", component_layer=\"framewo)",
+        "evidence_span_count": 0,
+        "field_confidence_count": 0,
+        "validation_finding_count": 0,
+        "conflict_flag_count": 0,
+        "rule_validation_passed": true,
+        "invoked_at": "2026-03-20T07:08:04.452590+00:00"
+      },
+      {
+        "raw_id": "raw_local_9c8274c6d39a48a4",
+        "source_name": "nvd",
+        "strategy_requested": "llm_optional",
+        "strategy_executed": "rules_only_degraded",
+        "llm_model": "qwen3.5-plus",
+        "prompt_version": "v2.0-llm-primary",
+        "llm_confidence": 0.0,
+        "llm_reason": "LLM failed (KeyError: 'Input to ChatPromptTemplate is missing variables {\\'mentioned_name=\"langchain\", component_layer=\"framework\"\\'}.  Expected: [\\'cleaned_payload\\', \\'mentioned_name=\"langchain\", component_layer=\"framewo)",
+        "fallback_reason": "LLM failed (KeyError: 'Input to ChatPromptTemplate is missing variables {\\'mentioned_name=\"langchain\", component_layer=\"framework\"\\'}.  Expected: [\\'cleaned_payload\\', \\'mentioned_name=\"langchain\", component_layer=\"framewo)",
+        "evidence_span_count": 0,
+        "field_confidence_count": 0,
+        "validation_finding_count": 0,
+        "conflict_flag_count": 0,
+        "rule_validation_passed": true,
+        "invoked_at": "2026-03-20T07:08:04.460108+00:00"
+      }
+    ]
+  processed_count:     7
+  0.9ms
+········································································
+
+✓ [13] semantic_dedup_and_merge
+  dedup_decisions:     []
+  llm_dedup_judgments:     []
+  dedup_merged_count:     0
+  stable_attack_records:     []
+  0.1ms
+········································································
+
+✓ [14] resolve_ai_bom
+  llm_bom_resolution_audits:     [
+      {
+        "raw_id": "raw_local_6d47f1c0b03942f8",
+        "mention_index": 0,
+        "mentioned_name": "langchain",
+        "strategy_requested": "llm_optional",
+        "strategy_executed": "rules_only_degraded",
+        "llm_model": "qwen3.5-plus",
+        "prompt_version": "v1.0-llm-bom-resolver",
+        "llm_confidence": 0.0,
+        "llm_decision": "n/a",
+        "llm_reasoning": "llm_failed:BadRequestError:Error code: 400 - {'error': {'message': \"<400> InternalError.Algo.InvalidParameter: 'messages' must contain the word 'json' in some form, to use 'response_format' of type 'json_object'.\", 'type': 'inv",
+        "fallback_reason": "llm_failed:BadRequestError:Error code: 400 - {'error': {'message': \"<400> InternalError.Algo.InvalidParameter: 'messages' must contain the word 'json' in some form, to use 'response_format' of type 'json_object'.\", 'type': 'inv",
+        "candidate_count": 2,
+        "selected_component_code": null,
+        "invoked_at": "2026-03-20T07:08:05.239082+00:00"
+      },
+      {
+        "raw_id": "raw_local_4cfda2af35804ba7",
+        "mention_index": 0,
+        "mentioned_name": "langchain",
+        "strategy_requested": "llm_optional",
+        "strategy_executed": "rules_only_degraded",
+        "llm_model": "qwen3.5-plus",
+        "prompt_version": "v1.0-llm-bom-resolver",
+        "llm_confidence": 0.0,
+        "llm_decision": "n/a",
+        "llm_reasoning": "llm_failed:BadRequestError:Error code: 400 - {'error': {'message': \"<400> InternalError.Algo.InvalidParameter: 'messages' must contain the word 'json' in some form, to use 'response_format' of type 'json_object'.\", 'type': 'inv",
+        "fallback_reason": "llm_failed:BadRequestError:Error code: 400 - {'error': {'message': \"<400> InternalError.Algo.InvalidParameter: 'messages' must contain the word 'json' in some form, to use 'response_format' of type 'json_object'.\", 'type': 'inv",
+        "candidate_count": 2,
+        "selected_component_code": null,
+        "invoked_at": "2026-03-20T07:08:05.616579+00:00"
+      },
+      {
+        "raw_id": "raw_local_9c8274c6d39a48a4",
+        "mention_index": 0,
+        "mentioned_name": "langchain",
+        "strategy_requested": "llm_optional",
+        "strategy_executed": "rules_only_degraded",
+        "llm_model": "qwen3.5-plus",
+        "prompt_version": "v1.0-llm-bom-resolver",
+        "llm_confidence": 0.0,
+        "llm_decision": "n/a",
+        "llm_reasoning": "llm_failed:BadRequestError:Error code: 400 - {'error': {'message': \"<400> InternalError.Algo.InvalidParameter: 'messages' must contain the word 'json' in some form, to use 'response_format' of type 'json_object'.\", 'type': 'inv",
+        "fallback_reason": "llm_failed:BadRequestError:Error code: 400 - {'error': {'message': \"<400> InternalError.Algo.InvalidParameter: 'messages' must contain the word 'json' in some form, to use 'response_format' of type 'json_object'.\", 'type': 'inv",
+        "candidate_count": 2,
+        "selected_component_code": null,
+        "invoked_at": "2026-03-20T07:08:05.958572+00:00"
+      }
+    ]
+  bom_queue_count:     0
+  0.1ms
+········································································
+
+✓ [15] review_ai_bom_resolution
+  stable_attack_records:     []
+  0.0ms
+········································································
+
+✓ [16] score_confidence_and_novelty
+  stable_attack_records:     []
+  new_attack_count:     0
+  0.0ms
+········································································
+
+✓ [17] refresh_coverage_view
+  source_health_dashboard:     [
+      {
+        "source_name": "arxiv",
+        "success_rate": 1.0,
+        "degraded_rate": 0.0,
+        "avg_latency_ms": 0.05,
+        "total_queries": 1,
+        "total_items": 1,
+        "drift_detected": false,
+        "drift_reason": null
+      },
+      {
+        "source_name": "cisa_kev",
+        "success_rate": 1.0,
+        "degraded_rate": 0.0,
+        "avg_latency_ms": 0.08,
+        "total_queries": 1,
+        "total_items": 1,
+        "drift_detected": false,
+        "drift_reason": null
+      },
+      {
+        "source_name": "github_advisories",
+        "success_rate": 1.0,
+        "degraded_rate": 0.0,
+        "avg_latency_ms": 0.06,
+        "total_queries": 1,
+        "total_items": 1,
+        "drift_detected": false,
+        "drift_reason": null
+      },
+      {
+        "source_name": "hackernews",
+        "success_rate": 1.0,
+        "degraded_rate": 0.0,
+        "avg_latency_ms": 0.05,
+        "total_queries": 1,
+        "total_items": 1,
+        "drift_detected": false,
+        "drift_reason": null
+      },
+      {
+        "source_name": "mitre_attack",
+        "success_rate": 1.0,
+        "degraded_rate": 0.0,
+        "avg_latency_ms": 0.05,
+        "total_queries": 1,
+        "total_items": 1,
+        "drift_detected": false,
+        "drift_reason": null
+      },
+      {
+        "source_name": "nvd",
+        "success_rate": 1.0,
+        "degraded_rate": 0.0,
+        "avg_latency_ms": 0.06,
+        "total_queries": 1,
+        "total_items": 1,
+        "drift_detected": false,
+        "drift_reason": null
+      },
+      {
+        "source_name": "reddit",
+        "success_rate": 1.0,
+        "degraded_rate": 0.0,
+        "avg_latency_ms": 0.06,
+        "total_queries": 1,
+        "total_items": 1,
+        "drift_detected": false,
+        "drift_reason": null
+      }
+    ]
+  coverage_gaps:     []
+  0.1ms
+········································································
+
+✓ [18] coverage_gap_analysis
+  coverage_gaps:     []
+  gap_fill_needed:     false
+  gap_fill_rationale:     "coverage_gap_fill_not_required"
+  gap_fill_round:     0
+  0.1ms
+········································································
+
+✓ [19] weak_signal_mining
+  weak_signal_clusters:     []
+  0.0ms
+········································································
+
+✓ [20] generate_alerts
+  alert_candidates:     []
+  0.0ms
+········································································
+
+✓ [21] finalize_run
+  run_status:     "partial_success"
+  finished_at:     "2026-03-20T07:08:05.975090+00:00"
+  errors:     [
+      {
+        "node_name": "semantic_dedup_and_merge",
+        "error_type": "RuntimeError",
+        "message": "Storage folder .runtime\\wp11\\vector_memory is already accessed by another instance of Qdrant client. If you require concurrent access, use Qdrant server instead.",
+        "subject_id": null,
+        "retryable": false,
+        "trace_id": "trace_d60f3359a3fb46dd",
+        "occurred_at": "2026-03-20T07:08:04.975760+00:00"
+      }
+    ]
+  0.1ms
+········································································
+
+═════════════════════════════════ 运行摘要 ═════════════════════════════════
+
+▸ 状态
+  run_status   : partial_success
+  finished_at  : 2026-03-20T07:08:05.975090+00:00
+  total_elapsed: 3.15s
+
+▸ 数据指标
+  raw_items                   :    7  ███████
+  stored_raw_ids              :    7  ███████
+  standardized_items          :    7  ███████
+  stable_attack_records       :    0  
+  dedup_decisions             :    0  
+  coverage_gaps               :    0  
+  weak_signal_clusters        :    0  
+  alert_candidates            :    0  
+
+▸ 计数器
+  processed_count             : 7
+  dedup_merged_count          : 0
+  new_attack_count            : 0
+  bom_queue_count             : 0
+  reflection_round            : 0
+  gap_fill_round              : 0
+
+▸ 节点执行序列
+  ✓ [01] load_runtime_context                 0.2ms
+  ✓ [02] supervisor_plan                      0.2ms
+  ✓ [03] dispatch_collection                  0.3ms
+  ✓ [04] collect_advisory_sources             0.1ms
+  ✓ [05] collect_code_sources                 0.3ms
+  ✓ [06] collect_community_sources            0.3ms
+  ✓ [07] collect_structured_sources           0.3ms
+  ✓ [08] collect_paper_sources                0.4ms
+  ✓ [09] store_raw_records                    0.2ms
+  ✓ [10] assess_collection_yield              0.2ms
+  ✓ [11] reflect_search_strategy              0.1ms
+  ✓ [12] parse_and_standardize                0.9ms
+  ○ [13] semantic_dedup_and_merge             0.1ms
+  ✓ [14] resolve_ai_bom                       0.1ms
+  ✓ [15] review_ai_bom_resolution             0.0ms
+  ✓ [16] score_confidence_and_novelty         0.0ms
+  ✓ [17] refresh_coverage_view                0.1ms
+  ✓ [18] coverage_gap_analysis                0.1ms
+  ✓ [19] weak_signal_mining                   0.0ms
+  ✓ [20] generate_alerts                      0.0ms
+  ✓ [21] finalize_run                         0.1ms
+
+▸ 错误 (1)
+  ?: Storage folder .runtime\wp11\vector_memory is already accessed by another instance of Qdrant client. If you require concurrent access, use Qdrant server instead.
+
+▸ 最慢节点 (Top 3)
+  #1 parse_and_standardize                0.9ms
+  #2 collect_paper_sources                0.4ms
+  #3 dispatch_collection                  0.3ms
+

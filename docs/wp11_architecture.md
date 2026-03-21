@@ -18,7 +18,6 @@ backend/
       crews/
         source_collection_crew.py
         standardization_crew.py
-        weak_signal_crew.py
 
       agents/
         supervisor_agent.py
@@ -33,7 +32,6 @@ backend/
         bom_mapper_agent.py
         bom_resolution_reviewer_agent.py
         coverage_analyst_agent.py
-        weak_signal_miner_agent.py
         alert_reviewer_agent.py
 
       tools/
@@ -44,7 +42,6 @@ backend/
         vector_memory_tools.py
         bom_tools.py
         coverage_tools.py
-        weak_signal_tools.py
         db_bridge_tools.py
 
       skills/
@@ -54,7 +51,6 @@ backend/
         dedup_adjudication_playbook.md
         ai_bom_resolution_playbook.md
         coverage_gap_fill_playbook.md
-        weak_signal_triage.md
         high_risk_alert_review.md
 
       memory/
@@ -82,7 +78,6 @@ backend/
       prompts/
         search_reflection_prompts.py
         standardization_prompts.py
-        weak_signal_prompts.py
         review_prompts.py
 
       runners/
@@ -132,7 +127,6 @@ class SupervisorAgent:
         coverage_snapshot: list[dict],
         source_quality_rows: list[dict],
         query_feedback_rows: list[dict] | None = None,
-        weak_signal_summary: list[dict] | None = None,
     ) -> dict:
         """Return CollectionPlan."""
 ```
@@ -179,7 +173,7 @@ class PaperCollectorAgent:
 ```python
 class CommunitySignalCollectorAgent:
     def collect(self, plan: dict) -> list[dict]:
-        """Collect Reddit / HN / public discussion weak signals."""
+        """Collect Reddit / HN / public discussion posts."""
 ```
 
 ### 3.7 StandardizerAgent
@@ -237,19 +231,11 @@ class CoverageAnalystAgent:
         """Return attack-taxonomy and vendor/model coverage gaps with targeted recommendations."""
 ```
 
-### 3.13 WeakSignalMinerAgent
-
-```python
-class WeakSignalMinerAgent:
-    def mine(self, community_posts: list[dict]) -> list[dict]:
-        """Return weak signal clusters and precursor scores."""
-```
-
-### 3.14 AlertReviewerAgent
+### 3.13 AlertReviewerAgent
 
 ```python
 class AlertReviewerAgent:
-    def review(self, attack_candidates: list[dict], weak_signal_clusters: list[dict]) -> list[dict]:
+    def review(self, attack_candidates: list[dict]) -> list[dict]:
         """Return final alert candidates."""
 ```
 
@@ -271,7 +257,6 @@ def review_bom_resolution_node(state: dict) -> dict: ...
 def score_confidence_and_novelty_node(state: dict) -> dict: ...
 def refresh_coverage_view_node(state: dict) -> dict: ...
 def coverage_gap_analysis_node(state: dict) -> dict: ...
-def weak_signal_mining_node(state: dict) -> dict: ...
 def generate_alerts_node(state: dict) -> dict: ...
 def finalize_run_node(state: dict) -> dict: ...
 ```
@@ -307,18 +292,6 @@ metadata：
 - `taxonomy_primary`
 - `component_ids`
 - `last_seen_at`
-
-### `weak_signal_memory`
-用途：
-- 社区讨论聚类
-- novelty / burst / precursor inference
-
-metadata：
-- `cluster_hint`
-- `source_name`
-- `community_type`
-- `published_at`
-- `suspected_attack_family`
 
 ### `query_feedback_memory`
 用途：
@@ -473,7 +446,6 @@ LLM 需要回答的核心问题：
 推荐结构：
 - broad recall query
 - precision probe query
-- weak-signal probe query
 - evidence corroboration query
 - component-anchored query
 - taxonomy-anchored query
@@ -511,8 +483,7 @@ Phase 2 可升级：
 4. Qdrant 语义召回去重
 5. BOM resolution
 6. Coverage gap fill
-7. Weak signal mining
-8. Alert review
+7. Alert review
 
 ## 8. 与现有 db 层的集成原则
 

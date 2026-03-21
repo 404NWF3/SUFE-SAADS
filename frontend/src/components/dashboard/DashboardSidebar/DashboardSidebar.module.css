@@ -70,6 +70,84 @@
   margin-left: auto;
 }
 
+/* ── API Mode Toggle ──────────────────────────────────────── */
+
+.apiToggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  margin: 0.5rem 0.75rem 0.25rem;
+  width: calc(100% - 1.5rem);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: filter 150ms;
+}
+
+.apiToggle:hover {
+  filter: brightness(0.94);
+}
+
+.apiToggleLive {
+  border-color: var(--status-running-border);
+  background: var(--status-running-bg);
+}
+
+.apiToggleMock {
+  border-color: var(--status-warning-border);
+  background: var(--status-warning-bg);
+}
+
+.apiDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.apiDotLive {
+  background: var(--status-running);
+  box-shadow: 0 0 5px var(--status-running);
+  animation: apiPulse var(--duration-pulse, 2000ms) ease-in-out infinite;
+}
+
+.apiDotMock {
+  background: var(--status-warning);
+}
+
+.apiLabel {
+  flex: 1;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-family: var(--font-mono);
+}
+
+.apiToggleLive .apiLabel { color: var(--status-running); }
+.apiToggleMock .apiLabel { color: var(--status-warning); }
+
+.apiHint {
+  font-size: 0.6rem;
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+  opacity: 0;
+  transition: opacity 150ms;
+}
+
+.apiToggle:hover .apiHint {
+  opacity: 1;
+}
+
+@keyframes apiPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+/* ── Footer ───────────────────────────────────────────────── */
+
 .footer {
   margin-top: auto;
   padding: 0.75rem 1rem;

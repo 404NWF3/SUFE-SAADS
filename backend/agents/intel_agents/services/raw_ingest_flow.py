@@ -6,10 +6,10 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from db.exceptions import DatabaseError, NotFoundError
-from db.services.ingestion_service import IngestionService
-from db.typing import SqlContext
-from db.unit_of_work import UnitOfWork
+from backend.db.exceptions import DatabaseError, NotFoundError
+from backend.db.services.ingestion_service import IngestionService
+from backend.db.typing import SqlContext
+from backend.db.unit_of_work import UnitOfWork
 
 from ..schemas.intel import RawCollectedItemDTO
 from ..schemas.source import StoredRawRecordDTO

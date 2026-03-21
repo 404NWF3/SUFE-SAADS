@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..models import BomResolutionQueueItem, DedupAudit
+from ..models import BomResolutionQueueItem, DedupAudit, QueryFeedbackLog
 from ..sql import governance_queries as q
 from .base import BaseRepository
 
@@ -74,4 +74,12 @@ class GovernanceRepository(BaseRepository):
     def reject_bom_queue_item(self, *, queue_id: int) -> BomResolutionQueueItem | None:
         row = self._fetch_one(q.REJECT_BOM_QUEUE_ITEM, {"queue_id": queue_id})
         return self._row_to_model(BomResolutionQueueItem, row)
+
+    def insert_query_feedback(self, row: dict) -> QueryFeedbackLog | None:
+        result = self._fetch_one(q.INSERT_QUERY_FEEDBACK_BATCH, row)
+        return self._row_to_model(QueryFeedbackLog, result)
+
+    def load_recent_query_feedback(self, limit: int = 100) -> list[QueryFeedbackLog]:
+        rows = self._fetch_all(q.LOAD_RECENT_QUERY_FEEDBACK, {"limit": limit})
+        return [QueryFeedbackLog(**row) for row in rows]
 

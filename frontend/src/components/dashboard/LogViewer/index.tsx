@@ -13,7 +13,7 @@ import { LogRow, type LogRowData } from "./LogRow"
 import styles from "./LogViewer.module.css"
 
 const ROW_HEIGHT = 24
-const LIST_HEIGHT = 320
+const LIST_HEIGHT = 400
 
 const LEVELS = ["DEBUG", "INFO", "WARN", "ERROR"] as const
 type Level = (typeof LEVELS)[number]
@@ -112,6 +112,9 @@ export function LogViewer({ streamUrl, height = LIST_HEIGHT }: LogViewerProps) {
             {level}
           </button>
         ))}
+        <span style={{ fontSize: "0.65rem", color: "var(--text-faint)", fontFamily: "var(--font-mono)" }}>
+          DEBUG=节点详情
+        </span>
         <input
           type="text"
           placeholder="过滤来源…"

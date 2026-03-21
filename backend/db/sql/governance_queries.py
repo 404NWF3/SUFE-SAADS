@@ -58,3 +58,38 @@ RETURNING
     queue_status, resolved_component_id, created_at, resolved_at
 """
 
+INSERT_QUERY_FEEDBACK_BATCH = """
+INSERT INTO wp11.query_feedback_log (
+    run_id, query_run_id, source_name, query_text, query_intent,
+    rewrite_round, result_count, parsed_count, duplicate_count,
+    novelty_yield, noise_ratio, source_mismatch,
+    reflection_diagnosis, reflection_action, should_retry,
+    expected_gain_dim, llm_confidence
+)
+VALUES (
+    %(run_id)s, %(query_run_id)s, %(source_name)s, %(query_text)s, %(query_intent)s,
+    %(rewrite_round)s, %(result_count)s, %(parsed_count)s, %(duplicate_count)s,
+    %(novelty_yield)s, %(noise_ratio)s, %(source_mismatch)s,
+    %(reflection_diagnosis)s, %(reflection_action)s, %(should_retry)s,
+    %(expected_gain_dim)s, %(llm_confidence)s
+)
+RETURNING
+    feedback_id, run_id, query_run_id, source_name, query_text, query_intent,
+    rewrite_round, result_count, parsed_count, duplicate_count,
+    novelty_yield, noise_ratio, source_mismatch,
+    reflection_diagnosis, reflection_action, should_retry,
+    expected_gain_dim, llm_confidence, created_at
+"""
+
+LOAD_RECENT_QUERY_FEEDBACK = """
+SELECT
+    feedback_id, run_id, query_run_id, source_name, query_text, query_intent,
+    rewrite_round, result_count, parsed_count, duplicate_count,
+    novelty_yield, noise_ratio, source_mismatch,
+    reflection_diagnosis, reflection_action, should_retry,
+    expected_gain_dim, llm_confidence, created_at
+FROM wp11.query_feedback_log
+ORDER BY created_at DESC
+LIMIT %(limit)s
+"""
+

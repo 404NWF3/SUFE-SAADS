@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from db.repositories.component_repository import normalize_component_alias
+from backend.db.repositories.component_repository import normalize_component_alias
 
 
 def test_normalize_component_alias_removes_common_separators() -> None:

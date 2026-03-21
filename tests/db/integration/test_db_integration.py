@@ -10,8 +10,8 @@ import pytest
 
 psycopg = pytest.importorskip("psycopg")
 
-from db.unit_of_work import UnitOfWork
-from db.services.component_seed_service import AiComponentSeedService
+from backend.db.unit_of_work import UnitOfWork
+from backend.db.services.component_seed_service import AiComponentSeedService
 
 
 @pytest.fixture(scope="session")

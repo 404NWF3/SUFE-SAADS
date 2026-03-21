@@ -136,7 +136,6 @@ class SupervisorAgent:
         coverage_snapshot: list[dict[str, Any]],
         source_quality_rows: list[dict[str, Any]],
         query_feedback_rows: list[dict[str, Any]] | None = None,
-        weak_signal_summary: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         ...
         plan = CollectionPlanDTO(

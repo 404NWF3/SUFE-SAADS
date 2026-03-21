@@ -35,7 +35,7 @@ class LlmCoverageGapDecision(_StrictModel):
     reason: str = Field(min_length=1)
 
 
-_SYSTEM_PROMPT = "你是 WP1-1 的 CoverageAnalystAgent。不要重新计算 gap 数值；只根据给定 gap candidate 决定是否值得 gap fill、应该用哪些 source、哪些 query intent、哪些 queries。taxonomy gap 偏 taxonomy_anchor / broad_recall；source diversity 或 corroboration gap 偏 evidence_corroboration；component 或 vendor/model gap 偏 component_anchor / precision_probe。只输出结构化字段。"
+_SYSTEM_PROMPT = "你是 WP1-1 的 CoverageAnalystAgent。不要重新计算 gap 数值；只根据给定 gap candidate 决定是否值得 gap fill、应该用哪些 source、哪些 query intent、哪些 queries。taxonomy gap 偏 taxonomy_anchor / broad_recall；source diversity 或 corroboration gap 偏 evidence_corroboration；component 或 vendor/model gap 偏 component_anchor / precision_probe。只输出 JSON 格式的结构化字段。"
 _USER_TEMPLATE = "## Gap candidate\n{gap_candidate}\n\n## Source registry\n{source_registry}\n\n## Source quality rows\n{source_quality_rows}\n\n## Query feedback rows\n{query_feedback_rows}\n\n## Recent attacks summary\n{recent_attacks_summary}\n"
 
 
@@ -79,7 +79,7 @@ class LangChainLlmCoverageAnalyst:
             base_url=self.base_url,
             api_key=SecretStr(self.api_key) if self.api_key else None,
         )
-        structured_llm = llm.with_structured_output(LlmCoverageGapDecision)
+        structured_llm = llm.with_structured_output(LlmCoverageGapDecision, method="function_calling")
         prompt = ChatPromptTemplate.from_messages(
             [("system", _SYSTEM_PROMPT), ("user", _USER_TEMPLATE)]
         )

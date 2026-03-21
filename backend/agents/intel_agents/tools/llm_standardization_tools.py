@@ -134,12 +134,12 @@ plugin, runtime, vector_stack, unknown
 
 ## 参考示例
 - langchain prompt injection advisory → canonical_name="LangChain Prompt Injection via Agent Tools", \
-attack_family="prompt_injection", taxonomy=[OWASP-LLM-01], bom_mentions=[{mentioned_name="langchain", \
-component_layer="framework"}]
+attack_family="prompt_injection", taxonomy=[OWASP-LLM-01], bom_mentions=[{{mentioned_name="langchain", \
+component_layer="framework"}}]
 - agent workflow abuse discussion → canonical_name="Agent Hijack via Tool Misuse", \
 attack_family="agent_hijack", taxonomy=[OWASP-LLM-07]
 
-只输出结构化字段，不输出额外解释。"""
+只输出 JSON 格式的结构化字段，不输出额外解释。"""
 
 _USER_TEMPLATE = """\
 source_name: {source_name}
@@ -220,7 +220,7 @@ class LangChainLlmStandardizer:
             base_url=self.base_url,
             api_key=SecretStr(self.api_key) if self.api_key else None,
         )
-        structured_llm = llm.with_structured_output(LlmStandardizationResult)
+        structured_llm = llm.with_structured_output(LlmStandardizationResult, method="function_calling")
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", _SYSTEM_PROMPT),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any
 
@@ -95,7 +96,7 @@ class StandardizerAgent:
         standardized: list[dict[str, Any]] = []
         audits: list[dict[str, Any]] = []
 
-        for raw_item in raw_items:
+        def _process_one(raw_item: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
             item = RawCollectedItemDTO.model_validate(raw_item)
             raw_id = str(
                 raw_index.get(item.query_run_id) or f"raw_untracked_{item.query_run_id}"
@@ -198,46 +199,52 @@ class StandardizerAgent:
             )
             validation_findings = list({*validation_findings, *stix_validation})
 
-            standardized.append(
-                StandardizedIntelDTO(
-                    raw_id=raw_id,
-                    attack_code=attack_code,
-                    canonical_name=projection["canonical_name"],
-                    attack_family=projection["attack_family"],
-                    severity_level=projection["severity_level"],
-                    summary=projection["summary"],
-                    description=projection["description"],
-                    exploit_preconditions=projection.get("exploit_preconditions"),
-                    impact_scope=projection.get("impact_scope"),
-                    first_seen_at=item.published_at,
-                    last_seen_at=item.fetched_at,
-                    stix_type="attack-pattern",
-                    stix_payload=stix_payload,
-                    evidence_snippet=evidence_snippet,
-                    artifact_ref=item.artifact_ref,
-                    evidence_refs=[item.source_uri, item.artifact_ref],
-                    extraction_reason=projection["extraction_reason"],
-                    source_confidence=source_confidence_for(item.source_name),
-                    extraction_confidence=projection["extraction_confidence"],
-                    taxonomy_items=projection["taxonomy_items"],
-                    cvss_hint=projection["cvss_hint"],
-                    bom_mentions=projection["bom_mentions"],
-                    field_confidence=field_confidence,
-                    conflict_flags=conflict_flags,
-                    validation_findings=validation_findings,
-                    normalization_trace=projection.get("normalization_trace", []),
-                    source_metadata={
-                        "source_name": item.source_name,
-                        "query_run_id": item.query_run_id,
-                        "external_id": item.external_id,
-                        "cve_refs": cve_refs,
-                        "standardization_strategy": projection["strategy_used"],
-                        "llm_model": projection.get("llm_model"),
-                        "prompt_version": projection.get("prompt_version"),
-                    },
-                ).model_dump(mode="python")
-            )
-            audits.append(audit)
+            standardized_item = StandardizedIntelDTO(
+                raw_id=raw_id,
+                attack_code=attack_code,
+                canonical_name=projection["canonical_name"],
+                attack_family=projection["attack_family"],
+                severity_level=projection["severity_level"],
+                summary=projection["summary"],
+                description=projection["description"],
+                exploit_preconditions=projection.get("exploit_preconditions"),
+                impact_scope=projection.get("impact_scope"),
+                first_seen_at=item.published_at,
+                last_seen_at=item.fetched_at,
+                stix_type="attack-pattern",
+                stix_payload=stix_payload,
+                evidence_snippet=evidence_snippet,
+                artifact_ref=item.artifact_ref,
+                evidence_refs=[item.source_uri, item.artifact_ref],
+                extraction_reason=projection["extraction_reason"],
+                source_confidence=source_confidence_for(item.source_name),
+                extraction_confidence=projection["extraction_confidence"],
+                taxonomy_items=projection["taxonomy_items"],
+                cvss_hint=projection["cvss_hint"],
+                bom_mentions=projection["bom_mentions"],
+                field_confidence=field_confidence,
+                conflict_flags=conflict_flags,
+                validation_findings=validation_findings,
+                normalization_trace=projection.get("normalization_trace", []),
+                source_metadata={
+                    "source_name": item.source_name,
+                    "query_run_id": item.query_run_id,
+                    "external_id": item.external_id,
+                    "cve_refs": cve_refs,
+                    "standardization_strategy": projection["strategy_used"],
+                    "llm_model": projection.get("llm_model"),
+                    "prompt_version": projection.get("prompt_version"),
+                },
+            ).model_dump(mode="python")
+            return standardized_item, audit
+
+        max_workers = min(12, max(1, len(raw_items)))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_process_one, item) for item in raw_items]
+            for future in as_completed(futures):
+                s_item, audit = future.result()
+                standardized.append(s_item)
+                audits.append(audit)
 
         return standardized, audits
 
@@ -323,6 +330,28 @@ class StandardizerAgent:
                 raise
             # llm_optional → degrade to rules
             fallback_reason = f"LLM failed ({exc.__class__.__name__}: {str(exc)[:200]})"
+            strategy_executed = "rules_only_degraded"
+            projection = {
+                **rule_fallback,
+                "strategy_used": "rules_only_degraded",
+                "fallback_reason": fallback_reason,
+            }
+            audit = self._build_audit(
+                raw_id=raw_id,
+                source_name=item["source_name"],
+                strategy_executed=strategy_executed,
+                llm_confidence=0.0,
+                llm_reason=fallback_reason,
+                fallback_reason=fallback_reason,
+                projection=projection,
+            )
+            return projection, audit
+
+        # Guard: chain.invoke() may return None without raising (LangChain parser failure)
+        if llm_result is None:
+            if self.strategy == "llm_required":
+                raise RuntimeError("LLM standardizer returned None (no structured output)")
+            fallback_reason = "LLM returned None (no structured output)"
             strategy_executed = "rules_only_degraded"
             projection = {
                 **rule_fallback,

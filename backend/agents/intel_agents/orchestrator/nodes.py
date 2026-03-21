@@ -30,6 +30,7 @@ from ..services.confidence_scoring_service import ConfidenceScoringService
 from ..services.coverage_read_model_service import CoverageReadModelService
 from ..services.dedup_memory_service import DedupMemoryService
 from ..services.gap_scoring_service import GapScoringService
+from ..services.query_feedback_memory import QueryFeedbackMemoryService
 from ..services.raw_ingest_flow import RawIngestFlow
 from ..services.source_health_service import SourceHealthService
 
@@ -254,7 +255,6 @@ def supervisor_plan_node(state: dict[str, Any]) -> dict[str, Any]:
             context.coverage_snapshot,
             context.source_quality_rows,
             query_feedback_rows=context.query_feedback_rows,
-            weak_signal_summary=context.weak_signal_summary,
         )
         return {
             "collection_plan": CollectionPlanDTO.model_validate(plan).model_dump(
@@ -602,6 +602,13 @@ def reflect_search_strategy_node(state: dict[str, Any]) -> dict[str, Any]:
         audit_row = LlmSearchReflectionAuditDTO.model_validate(audit).model_dump(
             mode="python"
         )
+        # Persist new feedback rows to DB (enables cross-run adaptive adjustment)
+        updated_feedback = QueryFeedbackMemoryService().append_feedback(
+            context.query_feedback_rows,
+            feedback_rows,
+            run_id=current_state.get("run_id"),
+            trace_id=current_state.get("trace_id"),
+        )
         patch: dict[str, Any] = {
             "reflection_needed": reflection_result["should_retry"],
             "reflection_rationale": reflection_result["evidence_summary"],
@@ -610,10 +617,7 @@ def reflect_search_strategy_node(state: dict[str, Any]) -> dict[str, Any]:
             "llm_reflection_audits": [audit_row],
             "runtime_context": {
                 **current_state.get("runtime_context", {}),
-                "query_feedback_rows": [
-                    *(context.query_feedback_rows or []),
-                    *feedback_rows,
-                ][-200:],
+                "query_feedback_rows": updated_feedback,
             },
         }
         if reflection_result["should_retry"]:

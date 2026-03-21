@@ -4,7 +4,7 @@ import os
 from typing import Any, Literal
 
 from langchain_core.prompts import ChatPromptTemplate
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, SecretStr
 
 
 # ---------------------------------------------------------------------------
@@ -22,7 +22,8 @@ class _StrictModel(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class LlmMergeJudgment(_StrictModel):
+class LlmMergeJudgment(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
     """Full structured output of the LLM merge judge.
 
     The LLM receives a candidate item, the best matching existing stable
@@ -45,6 +46,7 @@ class LlmMergeJudgment(_StrictModel):
     recommended_action: Literal["merge", "new", "review"] = "review"
     explanation: str = Field(
         min_length=1,
+        validation_alias=AliasChoices("explanation", "reasoning"),
         description="Brief explanation of why this verdict was reached.",
     )
     risk_notes: list[str] = Field(
@@ -54,6 +56,7 @@ class LlmMergeJudgment(_StrictModel):
     confidence: float = Field(
         ge=0.0,
         le=1.0,
+        validation_alias=AliasChoices("confidence", "confidence_score"),
         description="Judge confidence in the verdict (0=random guess, 1=certain).",
     )
     evidence_quotes: list[str] = Field(
@@ -110,7 +113,7 @@ _SYSTEM_PROMPT = """\
 - 必须提供至少 1 条证据引用
 - 引用候选项或已有记录中支持你判断的关键文本片段
 
-只输出结构化字段，不输出额外解释。"""
+只输出 JSON 格式的结构化字段，不输出额外解释。"""
 
 _USER_TEMPLATE = """\
 ## 候选攻击条目 (candidate)
@@ -223,7 +226,7 @@ class LangChainLlmMergeJudge:
             base_url=self.base_url,
             api_key=SecretStr(self.api_key) if self.api_key else None,
         )
-        structured_llm = llm.with_structured_output(LlmMergeJudgment)
+        structured_llm = llm.with_structured_output(LlmMergeJudgment, method="function_calling")
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", _SYSTEM_PROMPT),

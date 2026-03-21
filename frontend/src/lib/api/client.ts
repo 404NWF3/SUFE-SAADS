@@ -37,9 +37,21 @@ export async function fetchValidated<T>(
 }
 
 /* ── mock 模式开关 ──────────────────────────────────────────── */
+
+/** localStorage key，运行时覆盖 build-time 环境变量 */
+export const MOCK_MODE_STORAGE_KEY = "saads_mock_mode"
+
+/** 构建时默认值 */
+const _ENV_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_API === "true"
+
 /**
- * 通过 NEXT_PUBLIC_USE_MOCK_API=true 切换 mock 模式。
- * Phase 0-2 阶段 Dashboard 组件使用此开关降级到 mock 数据。
+ * 运行时 mock 模式开关：
+ * 优先读取 localStorage["saads_mock_mode"]（Dashboard 切换键写入），
+ * 未设置时回退到 build-time NEXT_PUBLIC_USE_MOCK_API。
+ * SSR 阶段无 window，始终返回 build-time 值。
  */
-export const USE_MOCK_API =
-  process.env.NEXT_PUBLIC_USE_MOCK_API === "true"
+export const USE_MOCK_API = (() => {
+  if (typeof window === "undefined") return _ENV_MOCK
+  const stored = localStorage.getItem(MOCK_MODE_STORAGE_KEY)
+  return stored !== null ? stored === "true" : _ENV_MOCK
+})()

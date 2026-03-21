@@ -58,9 +58,8 @@ WP1-1 采用以下 Agentic Design Pattern：
 13. `score_confidence_and_novelty`
 14. `refresh_coverage_view`
 15. `coverage_gap_analysis`
-16. `weak_signal_mining`
-17. `generate_alerts`
-18. `finalize_run`
+16. `generate_alerts`
+17. `finalize_run`
 
 ### 3.2 节点职责
 
@@ -78,7 +77,6 @@ WP1-1 采用以下 Agentic Design Pattern：
 - bootstrap
 - incremental
 - gap_fill
-- weak_signal_focus
 - mixed
 
 输出：
@@ -150,7 +148,6 @@ WP1-1 采用以下 Agentic Design Pattern：
 - confidence score
 - source trust adjusted score
 - novelty score
-- weak-signal emergence score
 
 #### `refresh_coverage_view`
 批处理结束后刷新 `mv_owasp_coverage`。
@@ -167,12 +164,6 @@ WP1-1 采用以下 Agentic Design Pattern：
 - targeted gap-fill tasks
 - expected evidence type
 - source/query recommendations
-
-#### `weak_signal_mining`
-对社区帖做：
-- clustering
-- burst detection
-- attack precursor inference
 
 #### `generate_alerts`
 高危新攻击或高置信弱信号触发告警。
@@ -199,7 +190,6 @@ START
   -> score_confidence_and_novelty
   -> refresh_coverage_view
   -> coverage_gap_analysis
-  -> weak_signal_mining
   -> generate_alerts
   -> finalize_run
   -> END
@@ -211,7 +201,6 @@ START
   - 若 `mode=bootstrap`：扩大 source coverage、放宽时间窗口
   - 若 `mode=incremental`：按 cursor 增量抓取
   - 若 `mode=gap_fill`：优先追低覆盖 taxonomy
-  - 若 `mode=weak_signal_focus`：优先社区与讨论源
 
 - `reflect_search_strategy`
   - LLM 判断当前失败模式：low_recall / high_noise / source_mismatch / saturated / uncertain
@@ -236,7 +225,6 @@ START
 
 - `coverage_gap_analysis`
   - 若 gap 很大，可回到 `dispatch_collection` 追加补采
-  - 否则进入 `weak_signal_mining`
 
 ## 5. State Schema
 
@@ -251,7 +239,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, TypedDict
 
-RunMode = Literal["bootstrap", "incremental", "gap_fill", "weak_signal_focus", "mixed"]
+RunMode = Literal["bootstrap", "incremental", "gap_fill", "mixed"]
 RunStatus = Literal["queued", "running", "partial_success", "succeeded", "failed"]
 
 
@@ -271,13 +259,12 @@ class SourceExecutionPlan(TypedDict):
     query_intent: Literal[
         "broad_recall",
         "precision_probe",
-        "weak_signal_probe",
         "evidence_corroboration",
     ]
     query_provenance: str
     rewrite_reason: str | None
     max_results: int
-    fetch_mode: Literal["bootstrap", "incremental", "targeted_gap_fill", "weak_signal"]
+    fetch_mode: Literal["bootstrap", "incremental", "targeted_gap_fill"]
     time_window_days: int | None
 
 
@@ -286,7 +273,6 @@ class CollectionPlan(TypedDict):
     rationale: str
     target_taxonomies: list[str]
     source_plans: list[SourceExecutionPlan]
-    weak_signal_focus_terms: list[str]
     max_parallel_sources: int
     max_items_per_source: int
     max_reflection_rounds: int
@@ -384,20 +370,6 @@ class DedupDecision(TypedDict, total=False):
     narrative_delta_detected: bool
 
 
-class WeakSignalCluster(TypedDict, total=False):
-    cluster_id: str
-    representative_text: str
-    source_count: int
-    post_count: int
-    first_seen_at: str
-    last_seen_at: str
-    burst_score: float
-    novelty_score: float
-    precursor_probability: float
-    inferred_attack_family: str | None
-    inferred_bom_mentions: list[BomMention]
-
-
 class CoverageGap(TypedDict):
     taxonomy_code: str
     taxonomy_name: str
@@ -442,7 +414,6 @@ class WP11GraphState(TypedDict, total=False):
     standardized_items: list[StandardizedIntel]
     dedup_decisions: list[DedupDecision]
 
-    weak_signal_clusters: list[WeakSignalCluster]
     coverage_gaps: list[CoverageGap]
     alert_candidates: list[AlertCandidate]
 
@@ -477,7 +448,6 @@ class WP11GraphState(TypedDict, total=False):
 - Qdrant（本地嵌入式）
   - 语义去重索引
   - 攻击签名记忆
-  - 弱信号聚类索引
   - semantic recall for dedup candidate retrieval
 - LangGraph checkpoint
   - 运行中状态
@@ -502,10 +472,6 @@ class WP11GraphState(TypedDict, total=False):
 - 同时按 vendor / model family 缺口生成 targeted queries
 - gap 大但 ROI 低时应停止回流，而不是机械追采
 
-### weak_signal_focus
-- 重点抓 Reddit / HN / GitHub Issues / Discussions
-- 强调 novelty 与 burst，不强依赖 CVE
-
 ## 8. 与 db 模块的对应关系
 
 - 原始记录入库：`IngestionService`
@@ -518,6 +484,5 @@ class WP11GraphState(TypedDict, total=False):
 
 - 能完成 bootstrap + incremental + gap_fill
 - 能执行 hash + vector 双层去重
-- 能处理“相似攻击但不同 AI BOM”的增量更新
-- 能识别社区求助帖中的弱信号
+- 能处理”相似攻击但不同 AI BOM”的增量更新
 - 能把高危结果落到数据库并可供 WP1-2 消费

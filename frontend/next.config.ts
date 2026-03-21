@@ -20,6 +20,15 @@ const CSP = [
   .trim();
 
 const nextConfig: NextConfig = {
+  async rewrites() {
+    return [
+      {
+        // 将所有 /api/* 请求代理到 FastAPI 后端（开发模式）
+        source: "/api/:path*",
+        destination: "http://localhost:8000/api/:path*",
+      },
+    ];
+  },
   async headers() {
     return [
       {

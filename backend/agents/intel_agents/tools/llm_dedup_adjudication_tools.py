@@ -53,7 +53,7 @@ class LangChainLlmDedupAdjudicator:
             base_url=self.base_url,
             api_key=SecretStr(self.api_key) if self.api_key else None,
         )
-        structured_llm = llm.with_structured_output(LlmDedupAdjudicationResult)
+        structured_llm = llm.with_structured_output(LlmDedupAdjudicationResult, method="function_calling")
         prompt = ChatPromptTemplate.from_messages(
             [
                 (

@@ -7,6 +7,29 @@ from uuid import UUID
 
 
 @dataclass(slots=True)
+class QueryFeedbackLog:
+    feedback_id: int
+    run_id: str
+    query_run_id: str
+    source_name: str
+    query_text: str
+    query_intent: str
+    rewrite_round: int
+    result_count: int
+    parsed_count: int
+    duplicate_count: int
+    novelty_yield: Decimal
+    noise_ratio: Decimal
+    source_mismatch: bool
+    reflection_diagnosis: str | None
+    reflection_action: str | None
+    should_retry: bool
+    expected_gain_dim: str | None
+    llm_confidence: Decimal | None
+    created_at: datetime
+
+
+@dataclass(slots=True)
 class DedupAudit:
     audit_id: int
     candidate_raw_id: UUID

@@ -19,10 +19,20 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 import sys
 import textwrap
 import time
 from typing import Any
+
+ROOT = Path(__file__).resolve().parent
+BACKEND = ROOT / "backend"
+if str(BACKEND) not in sys.path:
+    sys.path.insert(0, str(BACKEND))
+
+# 加载 .env（必须在 backend 模块 import 之前）
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=ROOT / ".env", override=False)
 
 # Windows: 强制 stdout/stderr 使用 UTF-8，避免中文乱码
 if sys.platform == "win32":
@@ -134,6 +144,35 @@ SCENARIOS: dict[str, dict[str, Any]] = {
     },
 }
 
+# 与 state.py 中 Annotated[list, operator.add] 一致的字段 —— 合并时追加而非覆盖
+_LIST_ADD_FIELDS: frozenset[str] = frozenset({
+    "source_execution_stats", "source_health_dashboard", "source_drift_alerts",
+    "fetch_audits", "stored_raw_records", "stored_raw_ids", "ingest_audits",
+    "raw_items", "query_telemetry", "collection_yield_summary",
+    "llm_planning_audits", "llm_reflection_audits", "llm_standardization_audits",
+    "llm_bom_resolution_audits", "llm_dedup_judgments", "dedup_decisions",
+    "merge_audits", "coverage_gaps",
+    "gap_fill_dispatch_plans", "llm_coverage_analysis_audits", "alert_candidates",
+    "node_results", "errors", "completed_nodes",
+    "processed_subject_ids", "skipped_subject_ids",
+})
+# Annotated[dict, merge_dicts] 字段
+_DICT_MERGE_FIELDS: frozenset[str] = frozenset({"node_attempts", "source_cursors"})
+
+
+def _merge_state(prev: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
+    """Reducer-aware state merge，对 operator.add 字段追加而非覆盖。"""
+    merged = dict(prev)
+    for k, v in update.items():
+        if k in _LIST_ADD_FIELDS and isinstance(merged.get(k), list) and isinstance(v, list):
+            merged[k] = merged[k] + v
+        elif k in _DICT_MERGE_FIELDS and isinstance(merged.get(k), dict) and isinstance(v, dict):
+            merged[k] = {**merged[k], **v}
+        else:
+            merged[k] = v
+    return merged
+
+
 # 节点执行顺序（用于进度条）
 NODE_ORDER = [
     "load_runtime_context",
@@ -154,7 +193,6 @@ NODE_ORDER = [
     "score_confidence_and_novelty",
     "refresh_coverage_view",
     "coverage_gap_analysis",
-    "weak_signal_mining",
     "generate_alerts",
     "finalize_run",
 ]
@@ -179,7 +217,6 @@ NODE_FOCUS: dict[str, list[str]] = {
     "score_confidence_and_novelty": ["stable_attack_records", "new_attack_count"],
     "refresh_coverage_view":        ["source_health_dashboard", "coverage_gaps"],
     "coverage_gap_analysis":        ["coverage_gaps", "gap_fill_needed", "gap_fill_rationale", "gap_fill_round"],
-    "weak_signal_mining":           ["weak_signal_clusters"],
     "generate_alerts":              ["alert_candidates"],
     "finalize_run":                 ["run_status", "finished_at", "errors"],
 }
@@ -259,6 +296,7 @@ class StepDebugger:
         run_mode: str = "bootstrap",
         scenario: str = "normal",
         gap_fill_rounds: int = 1,
+        live: bool = False,
     ) -> dict[str, Any]:
         cfg = SCENARIOS[scenario]
 
@@ -266,6 +304,7 @@ class StepDebugger:
         print()
         print(_section("运行配置"))
         print(f"  run_mode  : {_c(run_mode, 'green')}")
+        print(f"  mode      : {_c('LIVE' if live else 'stub', 'green' if live else 'yellow')}")
         print(f"  scenario  : {_c(scenario, 'green')} — {cfg['description']}")
         print(f"  gap_rounds: {gap_fill_rounds}")
         if cfg["fail_once_nodes"]:
@@ -274,16 +313,38 @@ class StepDebugger:
             print(f"  always_fail: {cfg['always_fail_nodes']}")
         print()
 
-        # 构建初始状态
-        runtime_ctx = self._RuntimeContextDTO.default_stub(
-            run_mode=run_mode,
-            fail_once_nodes=cfg["fail_once_nodes"],
-            always_fail_nodes=cfg["always_fail_nodes"],
-            force_low_yield=cfg["force_low_yield"],
-            force_gap_fill=cfg["force_gap_fill"],
-            force_no_results=cfg["force_no_results"],
-            coverage_max_gap_fill_rounds=gap_fill_rounds,
-        )
+        import os as _os
+        if live:
+            # 生产模式：真实 API 采集，所有策略 llm_required
+            runtime_ctx = self._RuntimeContextDTO.default_live(
+                run_mode=run_mode,
+                coverage_max_gap_fill_rounds=gap_fill_rounds,
+            )
+        else:
+            # Stub 模式：注入调试场景，LLM 根据 OPENAI_API_KEY 自动降级
+            _base_ctx = self._RuntimeContextDTO.default_stub(
+                run_mode=run_mode,
+                fail_once_nodes=cfg["fail_once_nodes"],
+                always_fail_nodes=cfg["always_fail_nodes"],
+                force_low_yield=cfg["force_low_yield"],
+                force_gap_fill=cfg["force_gap_fill"],
+                force_no_results=cfg["force_no_results"],
+                coverage_max_gap_fill_rounds=gap_fill_rounds,
+            )
+            _llm_model = _os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+            _use_llm = bool(_os.getenv("OPENAI_API_KEY"))
+            _llm_strategy = "llm_optional" if _use_llm else "rules_only"
+            _ctx_dict = _base_ctx.model_dump(mode="python")
+            _ctx_dict.update({
+                "planning_strategy":        _llm_strategy,
+                "reflection_strategy":      _llm_strategy,
+                "standardization_strategy": _llm_strategy,
+                "dedup_merge_strategy":     _llm_strategy,
+                "bom_resolution_strategy":  _llm_strategy,
+                "coverage_strategy":        _llm_strategy,
+                "llm_model":                _llm_model,
+            })
+            runtime_ctx = self._RuntimeContextDTO.model_validate(_ctx_dict)
         initial_state = self._build_initial_state(
             run_mode=run_mode,
             runtime_context=runtime_ctx.model_dump(mode="python"),
@@ -309,8 +370,8 @@ class StepDebugger:
                 node_seq.append(node_name)
                 idx = len(node_seq)
 
-                # 合并状态（用于 diff）
-                merged = {**prev_state, **state_update}
+                # 合并状态（用于 diff）—— 对 operator.add 字段追加而非覆盖
+                merged = _merge_state(prev_state, state_update)
 
                 # 计算变化
                 changed = _diff_state(prev_state, merged)
@@ -392,7 +453,6 @@ class StepDebugger:
             ("stable_attack_records",len(state.get("stable_attack_records", []))),
             ("dedup_decisions",      len(state.get("dedup_decisions", []))),
             ("coverage_gaps",        len(state.get("coverage_gaps", []))),
-            ("weak_signal_clusters", len(state.get("weak_signal_clusters", []))),
             ("alert_candidates",     len(state.get("alert_candidates", []))),
         ]
         for name, val in metrics:
@@ -457,9 +517,14 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mode",
-        choices=["bootstrap", "incremental", "gap_fill", "weak_signal_focus", "mixed"],
+        choices=["bootstrap", "incremental", "gap_fill", "mixed"],
         default="bootstrap",
         help="LangGraph run_mode (default: bootstrap)",
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="使用 default_live() 模式：真实 API 采集 + 全链路 LLM（需配置 OPENAI_API_KEY）",
     )
     parser.add_argument(
         "--scenario",
@@ -521,6 +586,7 @@ def main() -> None:
             run_mode=args.mode,
             scenario=args.scenario,
             gap_fill_rounds=args.rounds,
+            live=args.live,
         )
     except KeyboardInterrupt:
         print(f"\n{_c('中断', 'yellow')} — 运行被用户终止")

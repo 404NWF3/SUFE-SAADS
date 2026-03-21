@@ -29,7 +29,7 @@ backend/
 │   └── intel_agents/              ← WP1-1 情报采集智能体（主要业务逻辑）
 │       ├── orchestrator/          ← LangGraph 核心
 │       │   ├── graph.py           ← 图编译（compile_graph）
-│       │   ├── nodes.py           ← 21 个节点函数定义
+│       │   ├── nodes.py           ← 20 个节点函数定义
 │       │   ├── router.py          ← 条件路由函数
 │       │   ├── runtime.py         ← Phase1GraphRuntime 包装类
 │       │   └── state.py           ← WP11GraphState TypedDict + RunMode/RunStatus
@@ -158,7 +158,7 @@ WP1-1 是当前唯一全量实现的智能体（WP1-2～WP1-4 为 stub），其�
 | 运行元数据 | `run_id`, `run_mode`, `run_status`, `started_at` | 运行生命周期 |
 | 采集 | `source_cursors`, `fetch_audits`, `stored_raw_records` | 数据采集过程 |
 | 处理 | `raw_items`, `standardized_items`, `dedup_decisions` | 标准化与去重 |
-| 分析 | `coverage_gaps`, `weak_signal_clusters`, `alert_candidates` | 覆盖率与告警 |
+| 分析 | `coverage_gaps`, `alert_candidates` | 覆盖率与告警 |
 | 指标 | `processed_count`, `dedup_merged_count`, `new_attack_count` | 运行统计 |
 | 错误 | `node_attempts`, `node_results`, `errors`, `completed_nodes` | 错误追踪 |
 
@@ -166,12 +166,11 @@ WP1-1 是当前唯一全量实现的智能体（WP1-2～WP1-4 为 stub），其�
 - `bootstrap` — 全量采集（首次运行）
 - `incremental` — 增量更新（日常）
 - `gap_fill` — 补充覆盖缺口
-- `weak_signal_focus` — 聚焦低置信度记录
 - `mixed` — 组合模式
 
 ### 5.2 节点执行顺序（`orchestrator/runtime.py`）
 
-系统共有 **21 个图节点**，按以下顺序执行：
+系统共有 **20 个图节点**，按以下顺序执行：
 
 ```
 1.  load_runtime_context        ← 加载上下文（不可单独触发）
@@ -192,9 +191,8 @@ WP1-1 是当前唯一全量实现的智能体（WP1-2～WP1-4 为 stub），其�
 16. score_confidence_and_novelty ← 置信度与新颖度评分
 17. refresh_coverage_view       ← 刷新覆盖率视图
 18. coverage_gap_analysis       ← 覆盖缺口分析
-19. weak_signal_mining          ← 弱信号挖掘
-20. generate_alerts             ← 生成告警
-21. finalize_run                ← 完成运行
+19. generate_alerts             ← 生成告警
+20. finalize_run                ← 完成运行
 ```
 
 **注意：** `load_runtime_context`（节点 1）设置为 `is_triggerable: false`，不允许前端单独触发。
@@ -297,7 +295,7 @@ async with UnitOfWork(conn) as uow:
 
 | 方法 | 路径 | 返回类型 | 说明 |
 |------|------|---------|------|
-| GET | `/api/wp11/nodes` | `WpNodeInfo[]` | 21 个图节点信息 |
+| GET | `/api/wp11/nodes` | `WpNodeInfo[]` | 20 个图节点信息 |
 | POST | `/api/wp11/nodes/{name}/run` | `WpRunStatus` | 触发单节点 |
 | GET | `/api/wp11/state/latest` | `WP11StateSnapshot` | GraphState 摘要 |
 | GET | `/api/alerts` | `WpAlert[]` | 全局告警 |

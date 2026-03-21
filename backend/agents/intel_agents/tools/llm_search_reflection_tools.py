@@ -92,7 +92,7 @@ _SYSTEM_PROMPT = """\
 5. confidence < 0.60 时，通常 should_retry=False 或最多给出单条保守 rewrite
 6. 目标是 agentic strategy adaptation，而不是机械阈值判断
 
-只输出结构化字段，不输出额外解释。"""
+只输出 JSON 格式的结构化字段，不输出额外解释。"""
 
 _USER_TEMPLATE = """\
 run_mode: {run_mode}
@@ -154,7 +154,7 @@ class LangChainLlmSearchReflectionAgent:
             base_url=self.base_url,
             api_key=SecretStr(self.api_key) if self.api_key else None,
         )
-        structured_llm = llm.with_structured_output(LlmSearchReflectionResult)
+        structured_llm = llm.with_structured_output(LlmSearchReflectionResult, method="function_calling")
         prompt = ChatPromptTemplate.from_messages(
             [("system", _SYSTEM_PROMPT), ("user", _USER_TEMPLATE)]
         )

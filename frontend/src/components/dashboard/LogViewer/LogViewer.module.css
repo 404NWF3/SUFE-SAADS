@@ -154,20 +154,35 @@
   white-space: nowrap;
   overflow: hidden;
   cursor: pointer;
-  border-bottom: 1px solid rgba(23,21,18,0.05);
+  border-bottom: 1px solid rgba(23,21,18,0.04);
   box-sizing: border-box;
 }
 
 .row:hover { background: rgba(23,21,18,0.05); }
 
+/* DEBUG rows: subdued + left border indicator to show they are sub-entries */
+.rowDEBUG {
+  border-left: 2px solid rgba(23,21,18,0.12);
+  background: rgba(23,21,18,0.015);
+}
+.rowDEBUG:hover { background: rgba(23,21,18,0.04); }
+
+/* WARN rows: amber tint */
+.rowWARN { background: rgba(180,83,9,0.03); }
+
+/* ERROR rows: red tint */
+.rowERROR { background: rgba(185,28,28,0.04); }
+
 .rowTime { color: var(--text-faint); flex-shrink: 0; }
 .rowSource { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
 .rowMsg { overflow: hidden; text-overflow: ellipsis; color: var(--text); }
 
-.rowDEBUG .rowMsg { color: var(--text-faint); }
-.rowINFO  .rowMsg { color: var(--text); }
-.rowWARN  .rowMsg { color: var(--status-warning, #b45309); }
-.rowERROR .rowMsg { color: var(--status-error, #b91c1c); font-weight: 600; }
+.rowDEBUG .rowTime   { opacity: 0.5; }
+.rowDEBUG .rowSource { opacity: 0.6; }
+.rowDEBUG .rowMsg    { color: var(--text-faint); }
+.rowINFO  .rowMsg    { color: var(--text); }
+.rowWARN  .rowMsg    { color: var(--status-warning, #b45309); }
+.rowERROR .rowMsg    { color: var(--status-error, #b91c1c); font-weight: 600; }
 
 .levelTag {
   font-size: 0.62rem;

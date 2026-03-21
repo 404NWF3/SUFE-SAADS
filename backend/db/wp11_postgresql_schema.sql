@@ -585,6 +585,44 @@ CREATE INDEX IF NOT EXISTS idx_bom_queue_status_created_at
 CREATE INDEX IF NOT EXISTS idx_bom_queue_mentioned_name
     ON wp11.bom_resolution_queue (mentioned_name);
 
+CREATE TABLE IF NOT EXISTS wp11.query_feedback_log (
+    feedback_id          BIGSERIAL PRIMARY KEY,
+    run_id               VARCHAR(64) NOT NULL,
+    query_run_id         VARCHAR(64) NOT NULL,
+    source_name          VARCHAR(120) NOT NULL,
+    query_text           TEXT NOT NULL,
+    query_intent         VARCHAR(40) NOT NULL,
+    rewrite_round        SMALLINT NOT NULL DEFAULT 0,
+    result_count         INTEGER NOT NULL DEFAULT 0,
+    parsed_count         INTEGER NOT NULL DEFAULT 0,
+    duplicate_count      INTEGER NOT NULL DEFAULT 0,
+    novelty_yield        NUMERIC(5,4) NOT NULL DEFAULT 0,
+    noise_ratio          NUMERIC(5,4) NOT NULL DEFAULT 0,
+    source_mismatch      BOOLEAN NOT NULL DEFAULT FALSE,
+    reflection_diagnosis VARCHAR(60) NULL,
+    reflection_action    VARCHAR(60) NULL,
+    should_retry         BOOLEAN NOT NULL DEFAULT FALSE,
+    expected_gain_dim    VARCHAR(40) NULL,
+    llm_confidence       NUMERIC(5,4) NULL,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT ck_query_feedback_novelty_yield
+        CHECK (novelty_yield >= 0 AND novelty_yield <= 1),
+    CONSTRAINT ck_query_feedback_noise_ratio
+        CHECK (noise_ratio >= 0 AND noise_ratio <= 1),
+    CONSTRAINT ck_query_feedback_llm_confidence
+        CHECK (llm_confidence IS NULL OR (llm_confidence >= 0 AND llm_confidence <= 1)),
+    CONSTRAINT ck_query_feedback_rewrite_round
+        CHECK (rewrite_round >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_query_feedback_run_id
+    ON wp11.query_feedback_log (run_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_query_feedback_source_intent
+    ON wp11.query_feedback_log (source_name, query_intent, created_at DESC);
+
+COMMENT ON TABLE wp11.query_feedback_log IS '查询反馈历史持久化，跨 run 积累，支持自适应查询调整';
+
 
 -- =====================================
 -- 5. 视图 / 物化视图

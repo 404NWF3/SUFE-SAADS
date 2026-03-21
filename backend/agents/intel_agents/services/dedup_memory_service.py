@@ -3,11 +3,11 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from db.services.attack_merge_service import AttackMergeService
-from db.services.cvss_service import CvssService
-from db.services.taxonomy_service import TaxonomyService
-from db.typing import SqlContext
-from db.unit_of_work import UnitOfWork
+from backend.db.services.attack_merge_service import AttackMergeService
+from backend.db.services.cvss_service import CvssService
+from backend.db.services.taxonomy_service import TaxonomyService
+from backend.db.typing import SqlContext
+from backend.db.unit_of_work import UnitOfWork
 
 
 class DedupMemoryService:

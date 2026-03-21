@@ -4,7 +4,7 @@ import operator
 from typing import Annotated, Any, Literal, TypedDict
 from uuid import uuid4
 
-RunMode = Literal["bootstrap", "incremental", "gap_fill", "weak_signal_focus", "mixed"]
+RunMode = Literal["bootstrap", "incremental", "gap_fill", "mixed"]
 RunStatus = Literal["queued", "running", "partial_success", "succeeded", "failed"]
 
 

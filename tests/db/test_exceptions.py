@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from db.exceptions import (
+from backend.db.exceptions import (
     ConcurrencyConflictError,
     DuplicateEntityError,
     QueryExecutionError,

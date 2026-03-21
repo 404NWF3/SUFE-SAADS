@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation"
 import { SORTED_WP_REGISTRY } from "@/lib/wp-registry"
 import { StatusDot } from "@/components/ui/StatusDot"
 import { useWpStatus } from "@/lib/hooks/useWpStatus"
+import { MockModeToggle } from "./MockModeToggle"
 import styles from "./DashboardSidebar.module.css"
 
 function WpNavItem({ wpId, code, label }: { wpId: string; code: string; label: string }) {
@@ -49,6 +50,8 @@ export function DashboardSidebar() {
       {SORTED_WP_REGISTRY.map((wp) => (
         <WpNavItem key={wp.id} wpId={wp.id} code={wp.code} label={wp.label} />
       ))}
+
+      <MockModeToggle />
 
       <div className={styles.footer}>
         <Link href="/" style={{ color: "inherit", textDecoration: "none" }}>

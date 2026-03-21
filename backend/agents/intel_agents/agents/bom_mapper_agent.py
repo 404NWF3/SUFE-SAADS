@@ -262,7 +262,9 @@ class BomMapperAgent:
         mentioned_name = str(mention.get("mentioned_name", "")).strip()
         mentioned_vendor = mention.get("mentioned_vendor")
         from ..tools import normalize_vendor_name, normalize_version_constraint
-        from db.repositories.component_repository import normalize_component_alias
+        from backend.db.repositories.component_repository import (
+            normalize_component_alias,
+        )
 
         normalized_vendor = normalize_vendor_name(mentioned_vendor)
         normalized_alias = normalize_component_alias(mentioned_name)

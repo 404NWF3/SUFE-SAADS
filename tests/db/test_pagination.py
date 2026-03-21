@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from db.exceptions import ValidationError
-from db.pagination import Pagination
+from backend.db.exceptions import ValidationError
+from backend.db.pagination import Pagination
 
 
 def test_pagination_to_sql() -> None:

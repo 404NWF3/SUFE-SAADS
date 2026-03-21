@@ -13,7 +13,6 @@ WP1-1 的目标是构建一个长期运行的智能情报采集与分析系统�
 - AI BOM 组件解析
 - query telemetry 与 search reflection
 - multi-dimensional coverage gap fill
-- weak signal mining
 - alert generation 与 review queue
 
 ## 2. 开发原则
@@ -36,7 +35,6 @@ WP1-1 的目标是构建一个长期运行的智能情报采集与分析系统�
 - query rewrite 策略强度
 - dedup / rerank 模型强度
 - 向量检索索引规模与召回策略强度
-- weak signal 算法复杂度
 - coverage ROI 策略
 - 告警审查策略精度
 
@@ -351,35 +349,7 @@ coverage 设计拆分为两条主线：
 - gap fill 不再是机械回流，而是带 ROI 判断的策略执行
 - 攻击类型覆盖率与主流厂商 / 主流模型覆盖率都可独立分析和追踪
 
-## 3.8 Phase 8：Weak Signal Mining 与 Alert Generation
-
-目标：识别公开社区中的潜在威胁前兆，并输出高价值告警。
-
-核心任务：
-- 社区内容标准化与清洗
-- embedding clustering
-- burst detection
-- precursor scoring
-- 与 taxonomy、BOM、现有 attack entry 关联
-- 输出告警与待人工复核对象
-
-初始弱实现建议：
-- 先用轻量聚类和规则评分
-
-后续增强方向：
-- 更复杂的事件演化建模
-- 弱信号到 confirmed attack 的因果链分析
-
-建议交付物：
-- WeakSignalMinerAgent
-- AlertReviewerAgent
-- alert / review queue schema
-
-完成标准：
-- 能从社区源输出具有可解释性的弱信号结果
-- 告警具备 evidence refs、reason 和 severity
-
-## 3.9 Phase 9：运营化、评测与长期运行能力
+## 3.8 Phase 8：运营化、评测与长期运行能力
 
 目标：让系统具备可观测、可回放、可优化、可长期运行的工程能力。
 
@@ -387,7 +357,7 @@ coverage 设计拆分为两条主线：
 - 统一 tracing 与 metrics
 - 建 dashboard：source success、query yield、rewrite gain、coverage growth、alert precision
 - 建 replay 机制：按 run、source、query 回放
-- 建评测集：dedup、BOM、query rewrite、weak signal、alert review
+- 建评测集：dedup、BOM、query rewrite、alert review
 - 明确运维手册和异常处理策略
 
 建议交付物：
@@ -431,7 +401,7 @@ coverage 设计拆分为两条主线：
 3. 再完成 Phase 3 与 Phase 4，形成结构化 attack 主链路
 4. 再完成 Phase 5，保证组件语义和评分闭环
 5. 再完成 Phase 6 与 Phase 7，构建搜索反思与 coverage gap fill 的智能闭环
-6. 最后完成 Phase 8 与 Phase 9，提升弱信号价值和长期运行能力
+6. 最后完成 Phase 8，提升系统长期运行能力
 
 ## 6. 风险与控制点
 

@@ -39,11 +39,6 @@ WP1-1 是一个长期运行的情报采集与弱信号发现系统，不是单�
 - 最小分析维度：`taxonomy gap`、`source diversity gap`、`component family gap`
 - 扩展维度：`corroboration gap`、`novelty gap`
 
-#### `weak signal`
-- 含义：尚未形成高置信结构化攻击条目，但显示潜在威胁前兆的社区讨论、求助帖、实验复现、研究线索
-- 主要来源：Reddit、Hacker News、GitHub Discussions/Issues、公开研究社区
-- 注意：weak signal 不能直接视为 confirmed attack，必须经过聚类、burst、证据与相关性分析
-
 #### `artifact_ref`
 - 含义：指向正文、PDF、HTML、截图、对象存储或持久化记录的引用句柄
 - 目标：LangGraph 节点间尽量传 `artifact_ref`、`raw_id`、`attack_id`、摘要和统计，而不是传大文本 payload
@@ -57,7 +52,6 @@ WP1-1 是一个长期运行的情报采集与弱信号发现系统，不是单�
 - 结构化攻击情报生成
 - AI BOM 组件映射
 - 覆盖率分析与补采
-- 弱信号挖掘与高风险告警
 
 #### 本期不纳入
 - Telegram 私域采集
@@ -217,7 +211,6 @@ Phase 0 只定义指标，不定义具体阈值实现方式。阈值应在进入
 ### 4.5 告警与弱信号指标
 
 - 高价值告警 precision
-- 弱信号转 confirmed attack 比例
 - alert reviewer 过滤率
 - source drift 检出率
 
@@ -229,7 +222,7 @@ Phase 0 只定义指标，不定义具体阈值实现方式。阈值应在进入
 
 #### `State Schema` 与节点 handoff contract
 - 必须一次设计到位
-- 原因：后续要支持 query reflection、coverage 回流、弱信号、A2A 协作，如果 state 先按简化场景设计，后面会大面积返工
+- 原因：后续要支持 query reflection、coverage 回流、A2A 协作，如果 state 先按简化场景设计，后面会大面积返工
 - 约束：从一开始就支持 `run_id`、`trace_id`、`query_run_id`、`raw_id`、`attack_id`、`artifact_ref`、`confidence`、`reason`
 
 #### `Query Telemetry` 模型
@@ -270,10 +263,6 @@ Phase 0 只定义指标，不定义具体阈值实现方式。阈值应在进入
 #### rerank / dedup 精度
 - 允许先弱实现
 - 做法：先用 hash + embedding + 简单 rerank；后续再接 cross-encoder 或更复杂裁决器
-
-#### weak signal 挖掘算法
-- 允许先弱实现
-- 做法：先用轻量聚类、burst 和规则评分；后续再加更复杂的 precursor inference
 
 #### coverage ROI 策略
 - 允许先弱实现

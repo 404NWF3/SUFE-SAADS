@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
-from db.repositories.component_repository import normalize_component_alias
+from backend.db.repositories.component_repository import normalize_component_alias
 
 
 _VERSION_TOKEN_RE = re.compile(r"\d+(?:\.\d+){0,3}(?:[-_a-zA-Z0-9]+)?")

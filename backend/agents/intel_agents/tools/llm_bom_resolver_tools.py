@@ -98,7 +98,7 @@ _SYSTEM_PROMPT = """\
 - "fixed in X.Y.Z" / "patched in X.Y.Z" → ">=X.Y.Z"
 - 纯版本号 → "==X.Y.Z"
 
-只输出结构化字段，不输出额外解释。"""
+只输出 JSON 格式的结构化字段，不输出额外解释。"""
 
 _USER_TEMPLATE = """\
 ## 攻击上下文
@@ -192,7 +192,7 @@ class LangChainLlmBomResolver:
             base_url=self.base_url,
             api_key=SecretStr(self.api_key) if self.api_key else None,
         )
-        structured_llm = llm.with_structured_output(LlmBomResolutionResult)
+        structured_llm = llm.with_structured_output(LlmBomResolutionResult, method="function_calling")
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", _SYSTEM_PROMPT),

@@ -252,7 +252,7 @@ async def log_stream():
 }
 ```
 
-- `run_mode`：`"bootstrap"` / `"incremental"` / `"gap_fill"` / `"weak_signal_focus"` / `"mixed"`
+- `run_mode`：`"bootstrap"` / `"incremental"` / `"gap_fill"` / `"mixed"`
 - `target_sources`：可选，限定数据源范围；为空数组时采集全部源
 - `runtime_context_overrides`：高级调试用，覆盖初始状态字段
 
@@ -297,7 +297,7 @@ async def log_stream():
 
 #### `GET /api/wp11/nodes`
 
-获取 21 个图节点信息。
+获取 20 个图节点信息。
 
 **响应（`WpNodeInfoSchema[]`）：**
 
@@ -520,7 +520,7 @@ from origin 'http://localhost:3000' has been blocked by CORS policy
 - [ ] 点击"取消运行"，DELETE 请求成功，进度条消失
 
 ### 节点调试
-- [ ] 21 个节点卡片全部渲染，`load_runtime_context` 按钮为 disabled
+- [ ] 20 个节点卡片全部渲染，`load_runtime_context` 按钮为 disabled
 - [ ] 触发某个节点，后端执行对应逻辑，节点状态更新为 "succeeded" 或 "failed"
 
 ### 告警

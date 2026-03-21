@@ -36,7 +36,6 @@ class SupervisorAgent:
         coverage_snapshot: list[dict[str, Any]],
         source_quality_rows: list[dict[str, Any]],
         query_feedback_rows: list[dict[str, Any]] | None = None,
-        weak_signal_summary: list[dict[str, Any]] | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         context = RuntimeContextDTO.model_validate(
             {
@@ -51,7 +50,6 @@ class SupervisorAgent:
                 "coverage_feedback_rows": runtime_context.get(
                     "coverage_feedback_rows", []
                 ),
-                "weak_signal_summary": weak_signal_summary or [],
                 "pending_queue_summary": runtime_context.get(
                     "pending_queue_summary", {}
                 ),
@@ -112,7 +110,6 @@ class SupervisorAgent:
                     "coverage_snapshot": context.coverage_snapshot,
                     "source_quality_rows": context.source_quality_rows,
                     "query_feedback_rows": context.query_feedback_rows[-20:],
-                    "weak_signal_summary": context.weak_signal_summary,
                     "pending_queue_summary": context.pending_queue_summary,
                 }
             )
@@ -203,7 +200,6 @@ class SupervisorAgent:
             rationale="Supervisor heuristic plan generated from runtime context, source quality, and query feedback memory.",
             target_taxonomies=target_taxonomies,
             source_plans=[item.model_dump(mode="python") for item in source_plans],
-            weak_signal_focus_terms=["llm", "prompt injection", "jailbreak"],
             max_parallel_sources=min(4, max(1, len(source_plans))),
             max_items_per_source=10,
             max_reflection_rounds=1,
@@ -277,7 +273,6 @@ class SupervisorAgent:
                 rationale="Gap-fill mode was requested but no executable dispatch plans were available.",
                 target_taxonomies=target_taxonomies or ["OWASP-LLM-01"],
                 source_plans=[],
-                weak_signal_focus_terms=[],
                 max_parallel_sources=1,
                 max_items_per_source=10,
                 max_reflection_rounds=0,
@@ -289,7 +284,6 @@ class SupervisorAgent:
             rationale="Supervisor heuristic plan generated from Phase 7 targeted gap-fill dispatch plans.",
             target_taxonomies=target_taxonomies[:5] or ["OWASP-LLM-01"],
             source_plans=[item.model_dump(mode="python") for item in deduped],
-            weak_signal_focus_terms=[],
             max_parallel_sources=min(
                 context.coverage_max_gap_fill_plans,
                 max(1, len(deduped)),
@@ -335,9 +329,7 @@ class SupervisorAgent:
                     ),
                     fetch_mode=item.get(
                         "fetch_mode",
-                        "weak_signal"
-                        if source.source_type == "community"
-                        else "bootstrap",
+                        "bootstrap",
                     ),
                     time_window_days=item.get("time_window_days")
                     or source.default_time_window_days,
@@ -346,6 +338,14 @@ class SupervisorAgent:
 
         if not source_plans:
             return self._heuristic_plan(context), "llm_plan_filtered_out"
+
+        # Keep highest-priority plan per source_name (LLM may generate duplicates)
+        by_source: dict[str, SourceExecutionPlanDTO] = {}
+        for sp in source_plans:
+            existing = by_source.get(sp.source_name)
+            if existing is None or sp.priority > existing.priority:
+                by_source[sp.source_name] = sp
+        source_plans = list(by_source.values())
 
         return (
             CollectionPlanDTO(
@@ -358,10 +358,6 @@ class SupervisorAgent:
                 ]
                 or ["OWASP-LLM-01"],
                 source_plans=[item.model_dump(mode="python") for item in source_plans],
-                weak_signal_focus_terms=[
-                    str(item)
-                    for item in llm_plan.get("weak_signal_focus_terms", [])[:8]
-                ],
                 max_parallel_sources=min(
                     max(
                         1, int(llm_plan.get("max_parallel_sources", len(source_plans)))
@@ -421,7 +417,7 @@ def _seed_query_for(source_name: str) -> str:
 
 def _default_query_intent_for(source_type: str) -> str:
     if source_type == "community":
-        return "weak_signal_probe"
+        return "evidence_corroboration"
     if source_type == "paper":
         return "evidence_corroboration"
     return "broad_recall"
@@ -432,7 +428,6 @@ def _normalize_query_intent(
 ) -> Literal[
     "broad_recall",
     "precision_probe",
-    "weak_signal_probe",
     "evidence_corroboration",
     "source_specific_rewrite",
     "component_anchor",
@@ -442,17 +437,18 @@ def _normalize_query_intent(
     allowed = {
         "broad_recall",
         "precision_probe",
-        "weak_signal_probe",
         "evidence_corroboration",
         "source_specific_rewrite",
         "component_anchor",
         "taxonomy_anchor",
     }
+    # treat legacy weak_signal_probe as evidence_corroboration
+    if normalized == "weak_signal_probe":
+        normalized = "evidence_corroboration"
     return cast(
         Literal[
             "broad_recall",
             "precision_probe",
-            "weak_signal_probe",
             "evidence_corroboration",
             "source_specific_rewrite",
             "component_anchor",

@@ -32,12 +32,11 @@ class SourceExecutionPlanDTO(_StrictModel):
 
 class CollectionPlanDTO(_StrictModel):
     run_mode: Literal[
-        "bootstrap", "incremental", "gap_fill", "weak_signal_focus", "mixed"
+        "bootstrap", "incremental", "gap_fill", "mixed"
     ]
     rationale: str = Field(min_length=1)
     target_taxonomies: list[str] = Field(default_factory=list)
     source_plans: list[SourceExecutionPlanDTO] = Field(default_factory=list)
-    weak_signal_focus_terms: list[str] = Field(default_factory=list)
     max_parallel_sources: int = Field(ge=1)
     max_items_per_source: int = Field(ge=1)
     max_reflection_rounds: int = Field(ge=0, default=1)

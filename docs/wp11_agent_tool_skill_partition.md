@@ -32,7 +32,7 @@
 - 决定 run mode
 - 生成 collection plan
 - 设定 source priority / target taxonomy / query strategy
-- 为不同 source 指定 broad recall / precision probe / weak-signal probe 检索意图
+- 为不同 source 指定 broad recall / precision probe 检索意图
 - 约束 query reflection 的轮数、预算与停止条件
 
 输入：
@@ -40,7 +40,6 @@
 - source quality dashboard
 - recent alerts
 - cursor state
-- weak signal summary
 
 输出：
 - `CollectionPlan`
@@ -108,13 +107,7 @@
 - 生成 targeted sources / targeted query sets / expected evidence type
 - 判断 gap_fill 是否值得回流到采集环
 
-### 2.13 WeakSignalMinerAgent
-职责：
-- 对讨论数据聚类
-- 检测 burst
-- 识别攻击前兆
-
-### 2.14 AlertReviewerAgent
+### 2.13 AlertReviewerAgent
 职责：
 - 判断是否需要发出高危告警
 - 过滤低质量弱信号
@@ -264,7 +257,7 @@ def normalize_version_constraint(raw_version: str | None) -> str | None: ...
 def resolve_bom_mentions_batch(attack_id: str, mentions: list[dict], raw_id: str | None = None) -> list[dict]: ...
 ```
 
-## 3.5 Coverage / Weak Signal Tools
+## 3.5 Coverage Tools
 
 ### `load_owasp_coverage_snapshot`
 ```python
@@ -326,11 +319,6 @@ def compute_vendor_model_gap_scores(
 ### `estimate_gap_fill_roi`
 ```python
 def estimate_gap_fill_roi(gap: dict, candidate_sources: list[dict]) -> dict: ...
-```
-
-### `cluster_weak_signals`
-```python
-def cluster_weak_signals(posts: list[dict]) -> list[dict]: ...
 ```
 
 ### `detect_burst_events`
@@ -431,16 +419,7 @@ Skill 不是底层函数。Skill 是“流程经验包”。
 - `IntelSupervisorAgent`
 - `CoverageAnalystAgent`
 
-### 4.7 `weak-signal-triage`
-用途：
-- 分析社区求助帖是否像新攻击前兆
-- 检查是否只是普通 bug / 配置错误 / 使用问题
-
-适合调用者：
-- `WeakSignalMinerAgent`
-- `AlertReviewerAgent`
-
-### 4.8 `high-risk-alert-review`
+### 4.7 `high-risk-alert-review`
 用途：
 - 审查是否触发高危告警
 - 要求 evidence density、source diversity、BOM relevance 达阈值
@@ -451,11 +430,11 @@ Skill 不是底层函数。Skill 是“流程经验包”。
 ## 5. 最终建议的划分表
 
 - `子Agent`
-  - 计划、检索反思、归并、二次审查、覆盖率分析、弱信号判断、审查
+  - 计划、检索反思、归并、二次审查、覆盖率分析、审查
 - `Tool`
   - HTTP 抓取、embedding、向量检索、query telemetry、gap 计算、DB 调用、视图读取
 - `Skill`
-  - query expansion、search reflection、coverage gap fill、标准化、去重裁决、BOM 解析、弱信号研判、告警审查
+  - query expansion、search reflection、coverage gap fill、标准化、去重裁决、BOM 解析、告警审查
 
 ## 6. 一个简单判断口诀
 

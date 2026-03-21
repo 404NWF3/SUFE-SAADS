@@ -73,6 +73,7 @@ export const WpNodeLastStatusEnum = z.enum([
   "succeeded",
   "failed",
   "skipped",
+  "running",
   "never_run",
 ])
 export type WpNodeLastStatus = z.infer<typeof WpNodeLastStatusEnum>

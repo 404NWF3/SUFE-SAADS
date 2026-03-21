@@ -10,7 +10,7 @@ class _StrictModel(BaseModel):
 
 
 RunModeValue: TypeAlias = Literal[
-    "bootstrap", "incremental", "gap_fill", "weak_signal_focus", "mixed"
+    "bootstrap", "incremental", "gap_fill", "mixed"
 ]
 SourceRuntimeModeValue: TypeAlias = Literal["stub", "live", "hybrid"]
 StandardizationStrategyValue: TypeAlias = Literal[
@@ -75,7 +75,6 @@ class RuntimeContextDTO(_StrictModel):
     query_feedback_rows: list[dict[str, Any]] = Field(default_factory=list)
     gap_fill_dispatch_plans: list[dict[str, Any]] = Field(default_factory=list)
     coverage_feedback_rows: list[dict[str, Any]] = Field(default_factory=list)
-    weak_signal_summary: list[dict[str, Any]] = Field(default_factory=list)
     pending_queue_summary: dict[str, Any] = Field(default_factory=dict)
     latest_ingested_query_run_ids: list[str] = Field(default_factory=list)
     cursor_state: dict[str, dict[str, Any]] = Field(default_factory=dict)
@@ -121,6 +120,101 @@ class RuntimeContextDTO(_StrictModel):
             **payload,
             "base_run_mode": payload.get("run_mode", "bootstrap"),
         }
+
+    @classmethod
+    def default_live(
+        cls,
+        *,
+        run_mode: RunModeValue = "bootstrap",
+        llm_model: str | None = None,
+        coverage_max_gap_fill_rounds: int = 1,
+    ) -> "RuntimeContextDTO":
+        """生产模式：真实 API 采集 + LLM 全链路推理。
+        llm_model 默认读取环境变量 OPENAI_MODEL，未设置时降级为 qwen3.5-plus。
+        """
+        import os
+        model = llm_model or os.getenv("OPENAI_MODEL", "qwen3.5-plus")
+        return cls.model_validate(
+            {
+                "run_mode": run_mode,
+                "base_run_mode": run_mode,
+                "source_runtime_mode": "live",
+                "planning_strategy": "llm_required",
+                "coverage_strategy": "llm_required",
+                "reflection_strategy": "llm_required",
+                "standardization_strategy": "llm_required",
+                "bom_resolution_strategy": "llm_required",
+                "dedup_merge_strategy": "llm_required",
+                "dedup_adjudication_strategy": "rules_only",
+                "llm_model": model,
+                "llm_temperature": 0.0,
+                "validate_llm_online": False,
+                "source_registry": [
+                    SourceConfigDTO(source_name="nvd", source_type="structured", default_max_results=20, default_time_window_days=30),
+                    SourceConfigDTO(source_name="github_advisories", source_type="code", default_max_results=20, default_time_window_days=30),
+                    SourceConfigDTO(source_name="github_discussions", source_type="code", default_max_results=20, default_time_window_days=30),
+                    SourceConfigDTO(source_name="arxiv", source_type="paper", default_max_results=15, default_time_window_days=30),
+                    SourceConfigDTO(source_name="reddit", source_type="community", default_max_results=10, default_time_window_days=7),
+                    SourceConfigDTO(source_name="hackernews", source_type="community", default_max_results=10, default_time_window_days=7),
+                    SourceConfigDTO(source_name="cisa_kev", source_type="advisory", default_max_results=50, default_time_window_days=90),
+                    SourceConfigDTO(source_name="mitre_attack", source_type="structured", default_max_results=30, default_time_window_days=90),
+                    SourceConfigDTO(source_name="vendor_advisories", source_type="advisory", default_max_results=15, default_time_window_days=30),
+                    SourceConfigDTO(source_name="huggingface", source_type="code", default_max_results=10, default_time_window_days=30),
+                ],
+                "coverage_snapshot": [
+                    {"taxonomy_code": "OWASP-LLM-01", "attack_count": 0},
+                    {"taxonomy_code": "OWASP-LLM-02", "attack_count": 0},
+                    {"taxonomy_code": "OWASP-LLM-03", "attack_count": 0},
+                    {"taxonomy_code": "OWASP-LLM-04", "attack_count": 0},
+                    {"taxonomy_code": "OWASP-LLM-05", "attack_count": 0},
+                    {"taxonomy_code": "OWASP-LLM-06", "attack_count": 0},
+                    {"taxonomy_code": "OWASP-LLM-07", "attack_count": 0},
+                    {"taxonomy_code": "OWASP-LLM-08", "attack_count": 0},
+                    {"taxonomy_code": "OWASP-LLM-09", "attack_count": 0},
+                    {"taxonomy_code": "OWASP-LLM-10", "attack_count": 0},
+                ],
+                "source_quality_rows": [
+                    {"source_name": "nvd", "trust_level": 0.95},
+                    {"source_name": "github_advisories", "trust_level": 0.90},
+                    {"source_name": "github_discussions", "trust_level": 0.80},
+                    {"source_name": "arxiv", "trust_level": 0.85},
+                    {"source_name": "reddit", "trust_level": 0.60},
+                    {"source_name": "hackernews", "trust_level": 0.65},
+                    {"source_name": "cisa_kev", "trust_level": 0.98},
+                    {"source_name": "mitre_attack", "trust_level": 0.97},
+                    {"source_name": "vendor_advisories", "trust_level": 0.75},
+                    {"source_name": "huggingface", "trust_level": 0.70},
+                ],
+                "query_feedback_rows": [],
+                "gap_fill_dispatch_plans": [],
+                "coverage_feedback_rows": [],
+                "pending_queue_summary": {"unresolved_bom": 0},
+                "cursor_state": {},
+                "coverage_max_gap_fill_rounds": coverage_max_gap_fill_rounds,
+                "coverage_max_gap_fill_plans": 3,
+                "coverage_min_roi_threshold": 0.65,
+                "artifact_store_dir": ".runtime/wp11/raw_records",
+                "audit_store_dir": ".runtime/wp11/audit",
+                "dedup_store_dir": ".runtime/wp11/dedup",
+                "qdrant_local_path": ".runtime/wp11/vector_memory",
+                "qdrant_collection_name": "wp11_attack_signature_memory",
+                "persist_raw_records_to_db": True,
+                "prefer_db_source_registry": False,
+                "source_retry_attempts": 2,
+                "source_request_timeout_seconds": 30.0,
+                "source_health_drift_threshold": 0.5,
+                "payload_retention_days": 30,
+                "cleanup_expired_payloads": False,
+                "collection_task_mode": "fast",
+                "collection_trigger_type": "manual",
+                "collection_created_by": "api_live_run",
+                "resume_policy": "full_restart",
+                "resume_from_node": None,
+                "replay_query_run_ids": [],
+                "skip_completed_nodes": False,
+                "failure_injection": None,
+            }
+        )
 
     @classmethod
     def ensure_defaults(cls, payload: dict[str, Any]) -> "RuntimeContextDTO":
@@ -179,7 +273,6 @@ class RuntimeContextDTO(_StrictModel):
                 "query_feedback_rows": [],
                 "gap_fill_dispatch_plans": [],
                 "coverage_feedback_rows": [],
-                "weak_signal_summary": [],
                 "pending_queue_summary": {"unresolved_bom": 0},
                 "cursor_state": {},
                 "coverage_max_gap_fill_rounds": coverage_max_gap_fill_rounds,

@@ -4,7 +4,7 @@ import os
 from typing import Literal
 
 from langchain_core.prompts import ChatPromptTemplate
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, SecretStr
 
 
 PROMPT_VERSION = "v1.0-llm-supervisor-planner"
@@ -14,7 +14,8 @@ class _StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class LlmSourcePlan(_StrictModel):
+class LlmSourcePlan(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
     source_name: str = Field(min_length=1)
     query_text: str = Field(min_length=3)
     query_intent: Literal[
@@ -39,23 +40,30 @@ class LlmSourcePlan(_StrictModel):
     ] = "bootstrap"
 
 
-class LlmPlanningResult(_StrictModel):
-    rationale: str = Field(min_length=1)
+class LlmPlanningResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    rationale: str = Field(default="", validation_alias=AliasChoices("rationale", "reasoning", "explanation"))
     target_taxonomies: list[str] = Field(default_factory=list)
-    source_plans: list[LlmSourcePlan] = Field(default_factory=list)
-    weak_signal_focus_terms: list[str] = Field(default_factory=list)
-    max_parallel_sources: int = Field(ge=1, le=8)
-    max_items_per_source: int = Field(ge=1, le=100)
-    max_reflection_rounds: int = Field(ge=0, le=3)
+    source_plans: list[LlmSourcePlan] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("source_plans", "collection_plan", "plans"),
+    )
+    max_parallel_sources: int = Field(default=3, ge=1, le=8)
+    max_items_per_source: int = Field(default=10, ge=1, le=100)
+    max_reflection_rounds: int = Field(default=1, ge=0, le=3)
     reflection_enabled: bool = True
-    confidence: float = Field(ge=0.0, le=1.0)
+    confidence: float = Field(
+        default=0.7, ge=0.0, le=1.0,
+        validation_alias=AliasChoices("confidence", "confidence_score"),
+    )
 
 
 _SYSTEM_PROMPT = """\
 你是 WP1-1 的 Intel Supervisor Agent。你的任务是为本轮情报采集生成初始 collection plan。
 
 ## 你的职责
-- 基于 run_mode、coverage snapshot、source quality、query feedback memory、weak signal summary 规划一轮采集
+- 基于 run_mode、coverage snapshot、source quality、query feedback memory 规划一轮采集
 - 输出 source-aware、agentic 的初始 query plan
 - 你的计划应当为后续 Phase 6 reflection 提供良好起点
 
@@ -65,10 +73,11 @@ _SYSTEM_PROMPT = """\
 3. 如果历史 feedback 显示某类 query 高噪声，避免重复使用相同模式
 4. 如果某些 taxonomy coverage 明显不足，应优先纳入 target_taxonomies
 5. source_plans 需要可执行，query_text 不能空，priority 要有区分度
-6. 社区源可以更偏 weak_signal_probe；结构化/公告源可以更偏 broad_recall 或 precision_probe
+6. 结构化/公告源偏 broad_recall 或 precision_probe；社区/讨论源偏 evidence_corroboration
 7. 只输出当前 registry 中存在的 source_name
+8. 每个 source_name 只能出现一次，不要为同一 source 生成多个 plan
 
-只输出结构化字段，不输出额外解释。"""
+只输出 JSON 格式的结构化字段，不输出额外解释。"""
 
 _USER_TEMPLATE = """\
 run_mode: {run_mode}
@@ -84,9 +93,6 @@ run_mode: {run_mode}
 
 ## Query feedback memory
 {query_feedback_rows}
-
-## Weak signal summary
-{weak_signal_summary}
 
 ## Pending queue summary
 {pending_queue_summary}
@@ -134,7 +140,7 @@ class LangChainLlmSupervisorPlanner:
             base_url=self.base_url,
             api_key=SecretStr(self.api_key) if self.api_key else None,
         )
-        structured_llm = llm.with_structured_output(LlmPlanningResult)
+        structured_llm = llm.with_structured_output(LlmPlanningResult, method="function_calling")
         prompt = ChatPromptTemplate.from_messages(
             [("system", _SYSTEM_PROMPT), ("user", _USER_TEMPLATE)]
         )
@@ -145,7 +151,6 @@ class LangChainLlmSupervisorPlanner:
             "coverage_snapshot": str(payload.get("coverage_snapshot", ""))[:4000],
             "source_quality_rows": str(payload.get("source_quality_rows", ""))[:3000],
             "query_feedback_rows": str(payload.get("query_feedback_rows", ""))[:5000],
-            "weak_signal_summary": str(payload.get("weak_signal_summary", ""))[:3000],
             "pending_queue_summary": str(payload.get("pending_queue_summary", ""))[
                 :1500
             ],

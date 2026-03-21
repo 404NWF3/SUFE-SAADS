@@ -3,10 +3,10 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from db.repositories.component_repository import normalize_component_alias
-from db.services.component_seed_service import AiComponentSeedService
-from db.typing import SqlContext
-from db.unit_of_work import UnitOfWork
+from backend.db.repositories.component_repository import normalize_component_alias
+from backend.db.services.component_seed_service import AiComponentSeedService
+from backend.db.typing import SqlContext
+from backend.db.unit_of_work import UnitOfWork
 
 from ..schemas.intel import BomCandidateDTO, BomResolutionDTO
 from ..tools import (
