@@ -4,7 +4,9 @@ import os
 from typing import Any, Literal
 
 from langchain_core.prompts import ChatPromptTemplate
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field
+
+from .llm_client_factory import build_structured_chat_openai
 
 
 PROMPT_VERSION = "v1.0-llm-search-reflection"
@@ -146,13 +148,11 @@ class LangChainLlmSearchReflectionAgent:
                 "LLM search reflection requested but OPENAI_API_KEY is not configured."
             )
 
-        from langchain_openai import ChatOpenAI
-
-        llm = ChatOpenAI(
+        llm = build_structured_chat_openai(
             model=self.model,
             temperature=self.temperature,
             base_url=self.base_url,
-            api_key=SecretStr(self.api_key) if self.api_key else None,
+            api_key=self.api_key,
         )
         structured_llm = llm.with_structured_output(LlmSearchReflectionResult, method="function_calling")
         prompt = ChatPromptTemplate.from_messages(
