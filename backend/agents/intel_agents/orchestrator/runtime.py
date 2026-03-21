@@ -40,6 +40,24 @@ class Phase1GraphRuntime:
         resume_from_node: str | None = None,
         replay_query_run_ids: list[str] | None = None,
     ) -> dict[str, Any]:
+        recovered_state = self.prepare_recovered_state(
+            run_id,
+            reuse_run_id=reuse_run_id,
+            runtime_context_override=runtime_context_override,
+            resume_from_node=resume_from_node,
+            replay_query_run_ids=replay_query_run_ids,
+        )
+        return self.invoke(recovered_state)
+
+    def prepare_recovered_state(
+        self,
+        run_id: str,
+        *,
+        reuse_run_id: bool = False,
+        runtime_context_override: dict[str, Any] | None = None,
+        resume_from_node: str | None = None,
+        replay_query_run_ids: list[str] | None = None,
+    ) -> WP11GraphState:
         saved_state = self.get_state(run_id)
         saved_run_mode = cast(RunMode, saved_state.get("run_mode", "bootstrap"))
         merged_context = {
@@ -86,7 +104,7 @@ class Phase1GraphRuntime:
             recovered_state["collector_plans"] = dict(
                 saved_state.get("collector_plans", {})
             )
-        return self.invoke(recovered_state)
+        return recovered_state
 
     def invoke_stub_run(
         self,

@@ -63,12 +63,18 @@ class StandardizerAgent:
         llm_model: str = "gpt-5-mini",
         llm_temperature: float = 0.0,
         validate_online: bool = False,
+        llm_runtime_config: dict[str, Any] | None = None,
+        standardization_max_concurrency: int = 2,
     ) -> None:
         self.strategy = strategy
         self.validate_online = validate_online
+        self.standardization_max_concurrency = max(
+            1, int(standardization_max_concurrency or 1)
+        )
         self.llm_standardizer = llm_standardizer or LangChainLlmStandardizer(
             model=llm_model,
             temperature=llm_temperature,
+            runtime_config=llm_runtime_config,
         )
         self.rule_validator = rule_validator or RuleValidatorFuser()
 
@@ -238,7 +244,7 @@ class StandardizerAgent:
             ).model_dump(mode="python")
             return standardized_item, audit
 
-        max_workers = min(12, max(1, len(raw_items)))
+        max_workers = min(self.standardization_max_concurrency, max(1, len(raw_items)))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(_process_one, item) for item in raw_items]
             for future in as_completed(futures):
@@ -347,6 +353,10 @@ class StandardizerAgent:
             )
             return projection, audit
 
+        llm_meta: dict[str, Any] = {}
+        if isinstance(llm_result, dict):
+            llm_meta = dict(llm_result.pop("_llm_meta", {}) or {})
+
         # Guard: chain.invoke() may return None without raising (LangChain parser failure)
         if llm_result is None:
             if self.strategy == "llm_required":
@@ -395,7 +405,9 @@ class StandardizerAgent:
             **validated,
             "extraction_confidence": extraction_confidence,
             "strategy_used": strategy_executed,
-            "llm_model": getattr(self.llm_standardizer, "model", "unknown"),
+            "llm_model": llm_meta.get(
+                "llm_model", getattr(self.llm_standardizer, "model", "unknown")
+            ),
             "prompt_version": getattr(
                 self.llm_standardizer, "PROMPT_VERSION", PROMPT_VERSION
             ),
@@ -409,6 +421,7 @@ class StandardizerAgent:
             llm_reason=str(llm_result.get("extraction_reason", "")),
             fallback_reason=None,
             projection=projection,
+            llm_meta=llm_meta,
         )
 
         return projection, audit
@@ -531,13 +544,20 @@ class StandardizerAgent:
         llm_reason: str,
         fallback_reason: str | None,
         projection: dict[str, Any],
+        llm_meta: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        llm_meta = llm_meta or {}
         return LlmStandardizationAuditDTO(
             raw_id=raw_id,
             source_name=source_name,
             strategy_requested=self.strategy,
             strategy_executed=strategy_executed,
-            llm_model=getattr(self.llm_standardizer, "model", "unknown"),
+            llm_model=str(
+                llm_meta.get(
+                    "llm_model", getattr(self.llm_standardizer, "model", "unknown")
+                )
+            ),
+            llm_profile_id=llm_meta.get("profile_id"),
             prompt_version=getattr(
                 self.llm_standardizer, "PROMPT_VERSION", PROMPT_VERSION
             ),
@@ -549,6 +569,8 @@ class StandardizerAgent:
             validation_finding_count=len(projection.get("validation_findings", [])),
             conflict_flag_count=len(projection.get("conflict_flags", [])),
             rule_validation_passed=projection.get("rule_validation_passed", True),
+            llm_wait_seconds=llm_meta.get("wait_seconds"),
+            attempted_profiles=list(llm_meta.get("attempted_profiles", []) or []),
             invoked_at=_utcnow(),
         ).model_dump(mode="python")
 

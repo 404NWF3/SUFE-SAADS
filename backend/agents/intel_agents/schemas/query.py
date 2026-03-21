@@ -91,6 +91,7 @@ class LlmSearchReflectionAuditDTO(_StrictModel):
     strategy_requested: str = Field(min_length=1)
     strategy_executed: str = Field(min_length=1)
     llm_model: str = Field(min_length=1)
+    llm_profile_id: str | None = None
     prompt_version: str = Field(min_length=1)
     should_retry: bool = False
     stop_reason: str = Field(min_length=1)
@@ -101,6 +102,8 @@ class LlmSearchReflectionAuditDTO(_StrictModel):
     rewritten_sources: list[str] = Field(default_factory=list)
     evidence_summary: str = Field(min_length=1)
     fallback_reason: str | None = None
+    llm_wait_seconds: float | None = Field(default=None, ge=0.0)
+    attempted_profiles: list[str] = Field(default_factory=list)
     invoked_at: str = Field(min_length=1)
 
 
@@ -127,6 +130,7 @@ class LlmPlanningAuditDTO(_StrictModel):
     strategy_requested: str = Field(min_length=1)
     strategy_executed: str = Field(min_length=1)
     llm_model: str = Field(min_length=1)
+    llm_profile_id: str | None = None
     prompt_version: str = Field(min_length=1)
     plan_rationale: str = Field(min_length=1)
     source_plan_count: int = Field(ge=0)
@@ -136,6 +140,8 @@ class LlmPlanningAuditDTO(_StrictModel):
     confidence: float = Field(ge=0.0, le=1.0)
     feedback_rows_used: int = Field(ge=0)
     fallback_reason: str | None = None
+    llm_wait_seconds: float | None = Field(default=None, ge=0.0)
+    attempted_profiles: list[str] = Field(default_factory=list)
     invoked_at: str = Field(min_length=1)
 
 

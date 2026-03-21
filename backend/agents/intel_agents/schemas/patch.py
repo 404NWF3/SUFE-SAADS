@@ -16,6 +16,7 @@ class GraphNodePatchDTO(BaseModel):
     collection_plan: dict[str, Any] | None = None
     collection_coordination: dict[str, Any] | None = None
     collector_plans: dict[str, list[dict[str, Any]]] | None = None
+    resume_hint: dict[str, Any] | None = None
     source_cursors: dict[str, dict[str, Any]] | None = None
     source_execution_stats: list[dict[str, Any]] | None = None
     source_health_dashboard: list[dict[str, Any]] | None = None

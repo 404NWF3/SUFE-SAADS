@@ -67,6 +67,20 @@ class RuntimeContextDTO(_StrictModel):
     llm_model: str = Field(default="gpt-5-mini", min_length=1)
     llm_temperature: float = Field(default=0.0, ge=0.0, le=1.0)
     validate_llm_online: bool = False
+    llm_route_preset: str = Field(default="default", min_length=1)
+    llm_task_routes: dict[str, list[str]] = Field(default_factory=dict)
+    llm_retry_attempts: int = Field(default=3, ge=1, le=8)
+    llm_backoff_base_seconds: float = Field(default=2.0, gt=0.0, le=120.0)
+    llm_backoff_max_seconds: float = Field(default=30.0, gt=0.0, le=600.0)
+    llm_short_wait_threshold_seconds: float = Field(
+        default=60.0, gt=0.0, le=900.0
+    )
+    llm_resume_on_exhausted_retry: bool = True
+    standardization_max_concurrency: int = Field(default=2, ge=1, le=32)
+    planning_max_parallel_sources: int | None = Field(default=None, ge=1, le=8)
+    planning_max_items_per_source: int | None = Field(default=None, ge=1, le=100)
+    planning_max_reflection_rounds: int | None = Field(default=None, ge=0, le=3)
+    planning_reflection_enabled: bool | None = None
     source_registry: list[SourceConfigDTO] = Field(default_factory=list)
     coverage_snapshot: list[dict[str, Any]] = Field(default_factory=list)
     vendor_model_coverage_rows: list[dict[str, Any]] = Field(default_factory=list)
@@ -149,6 +163,18 @@ class RuntimeContextDTO(_StrictModel):
                 "llm_model": model,
                 "llm_temperature": 0.0,
                 "validate_llm_online": False,
+                "llm_route_preset": "default",
+                "llm_task_routes": {},
+                "llm_retry_attempts": 3,
+                "llm_backoff_base_seconds": 2.0,
+                "llm_backoff_max_seconds": 30.0,
+                "llm_short_wait_threshold_seconds": 60.0,
+                "llm_resume_on_exhausted_retry": True,
+                "standardization_max_concurrency": 2,
+                "planning_max_parallel_sources": 4,
+                "planning_max_items_per_source": 10,
+                "planning_max_reflection_rounds": 1,
+                "planning_reflection_enabled": True,
                 "source_registry": [
                     SourceConfigDTO(source_name="nvd", source_type="structured", default_max_results=20, default_time_window_days=30),
                     SourceConfigDTO(source_name="github_advisories", source_type="code", default_max_results=20, default_time_window_days=30),
@@ -249,6 +275,18 @@ class RuntimeContextDTO(_StrictModel):
                 "llm_model": "gpt-5-mini",
                 "llm_temperature": 0.0,
                 "validate_llm_online": False,
+                "llm_route_preset": "default",
+                "llm_task_routes": {},
+                "llm_retry_attempts": 2,
+                "llm_backoff_base_seconds": 1.0,
+                "llm_backoff_max_seconds": 8.0,
+                "llm_short_wait_threshold_seconds": 15.0,
+                "llm_resume_on_exhausted_retry": True,
+                "standardization_max_concurrency": 2,
+                "planning_max_parallel_sources": 4,
+                "planning_max_items_per_source": 10,
+                "planning_max_reflection_rounds": 1,
+                "planning_reflection_enabled": True,
                 "source_registry": [
                     SourceConfigDTO(source_name="nvd", source_type="structured"),
                     SourceConfigDTO(

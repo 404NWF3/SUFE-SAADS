@@ -33,14 +33,17 @@ class SearchReflectionAgent:
         llm_reflector: Any | None = None,
         feedback_memory: QueryFeedbackMemoryService | None = None,
         template_service: SourceQueryTemplateService | None = None,
+        llm_runtime_config: dict[str, Any] | None = None,
     ) -> None:
         self.strategy = strategy
         self.llm_model = llm_model
         self.llm_temperature = llm_temperature
         self.validate_online = validate_online
+        self.llm_runtime_config = llm_runtime_config or {}
         self.llm_reflector = llm_reflector or LangChainLlmSearchReflectionAgent(
             model=llm_model,
             temperature=llm_temperature,
+            runtime_config=self.llm_runtime_config,
         )
         self.feedback_memory = feedback_memory or QueryFeedbackMemoryService()
         self.template_service = template_service or SourceQueryTemplateService()
@@ -121,6 +124,9 @@ class SearchReflectionAgent:
             decision = SearchReflectionDecisionDTO.model_validate(
                 self.llm_reflector.reflect(payload)
             ).model_dump(mode="python")
+            llm_meta = dict(
+                getattr(self.llm_reflector, "last_invocation_meta", {}) or {}
+            )
             decision = self._constrain_decision(decision, query_telemetry)
             feedback_diagnostics = self._derive_feedback_diagnostics(
                 query_telemetry,
@@ -132,6 +138,7 @@ class SearchReflectionAgent:
                 invoked_at=invoked_at,
                 fallback_reason=None,
                 current_round=current_round,
+                llm_meta=llm_meta,
             )
             feedback = self._build_feedback_rows(
                 query_telemetry,
@@ -303,12 +310,15 @@ class SearchReflectionAgent:
         invoked_at: str,
         fallback_reason: str | None,
         current_round: int,
+        llm_meta: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        llm_meta = llm_meta or {}
         return LlmSearchReflectionAuditDTO(
             reflection_round=current_round,
             strategy_requested=self.strategy,
             strategy_executed=strategy_executed,
-            llm_model=self.llm_model,
+            llm_model=str(llm_meta.get("llm_model", self.llm_model)),
+            llm_profile_id=llm_meta.get("profile_id"),
             prompt_version=getattr(self.llm_reflector, "PROMPT_VERSION", "rules-only"),
             should_retry=bool(decision.get("should_retry", False)),
             stop_reason=str(decision.get("stop_reason", "unknown")),
@@ -324,6 +334,8 @@ class SearchReflectionAgent:
             ],
             evidence_summary=str(decision.get("evidence_summary", "no evidence")),
             fallback_reason=fallback_reason,
+            llm_wait_seconds=llm_meta.get("wait_seconds"),
+            attempted_profiles=list(llm_meta.get("attempted_profiles", []) or []),
             invoked_at=invoked_at,
         ).model_dump(mode="python")
 

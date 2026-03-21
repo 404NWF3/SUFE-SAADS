@@ -6,7 +6,10 @@ from typing import Any, Literal
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, ConfigDict, Field
 
-from .llm_client_factory import build_structured_chat_openai
+from .llm_client_factory import (
+    invoke_structured_with_model_pool,
+    list_available_profile_ids,
+)
 
 
 PROMPT_VERSION = "v1.0-llm-search-reflection"
@@ -125,6 +128,7 @@ class LangChainLlmSearchReflectionAgent:
         temperature: float = 0.0,
         base_url: str | None = None,
         api_key: str | None = None,
+        runtime_config: dict[str, Any] | None = None,
     ) -> None:
         self.model = model
         self.temperature = temperature
@@ -132,9 +136,19 @@ class LangChainLlmSearchReflectionAgent:
             base_url or os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL")
         )
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.runtime_config = runtime_config or {}
+        self.last_invocation_meta: dict[str, Any] = {}
 
     def is_available(self) -> bool:
-        return bool(self.api_key)
+        return bool(
+            list_available_profile_ids(
+                task_name="reflection",
+                default_model=self.model,
+                base_url=self.base_url,
+                api_key=self.api_key,
+                runtime_config=self.runtime_config,
+            )
+        )
 
     def validate_connectivity(self) -> None:
         if not self.is_available():
@@ -147,18 +161,11 @@ class LangChainLlmSearchReflectionAgent:
             raise RuntimeError(
                 "LLM search reflection requested but OPENAI_API_KEY is not configured."
             )
+        self.last_invocation_meta = {}
 
-        llm = build_structured_chat_openai(
-            model=self.model,
-            temperature=self.temperature,
-            base_url=self.base_url,
-            api_key=self.api_key,
-        )
-        structured_llm = llm.with_structured_output(LlmSearchReflectionResult, method="function_calling")
         prompt = ChatPromptTemplate.from_messages(
             [("system", _SYSTEM_PROMPT), ("user", _USER_TEMPLATE)]
         )
-        chain = prompt | structured_llm
         invoke_payload = {
             "run_mode": str(payload.get("run_mode", "bootstrap"))[:50],
             "reflection_round": str(payload.get("reflection_round", 0)),
@@ -170,9 +177,16 @@ class LangChainLlmSearchReflectionAgent:
             ],
             "source_templates": str(payload.get("source_templates", ""))[:4000],
         }
-        result = chain.invoke(invoke_payload)
-        if isinstance(result, LlmSearchReflectionResult):
-            return result.model_dump(mode="python")
-        return LlmSearchReflectionResult.model_validate(result).model_dump(
-            mode="python"
+        result, meta = invoke_structured_with_model_pool(
+            task_name="reflection",
+            prompt=prompt,
+            schema=LlmSearchReflectionResult,
+            payload=invoke_payload,
+            default_model=self.model,
+            temperature=self.temperature,
+            base_url=self.base_url,
+            api_key=self.api_key,
+            runtime_config=self.runtime_config,
         )
+        self.last_invocation_meta = meta
+        return result

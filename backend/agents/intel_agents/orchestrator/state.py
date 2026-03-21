@@ -25,6 +25,7 @@ class WP11GraphState(TypedDict, total=False):
     collection_plan: dict[str, Any] | None
     collection_coordination: dict[str, Any] | None
     collector_plans: dict[str, list[dict[str, Any]]]
+    resume_hint: dict[str, Any] | None
     resume_target_node: str | None
     current_node: str | None
 
@@ -89,6 +90,7 @@ def build_initial_state(
         "collection_plan": None,
         "collection_coordination": None,
         "collector_plans": {},
+        "resume_hint": None,
         "resume_target_node": resume_target_node,
         "current_node": None,
         "source_cursors": {},

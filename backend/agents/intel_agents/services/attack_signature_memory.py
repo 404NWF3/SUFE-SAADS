@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from uuid import NAMESPACE_URL, uuid5
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -36,23 +37,17 @@ class AttackSignatureMemory:
         self._ensure_collection()
         if not stable_records:
             return
-        points = []
-        for offset, record in enumerate(stable_records):
-            stable_attack_id = str(record.get("stable_attack_id", f"stable_{offset}"))
-            points.append(
-                models.PointStruct(
-                    id=offset + 1,
-                    vector=generate_embedding(build_dedup_text(record)),
-                    payload={
-                        "stable_attack_id": stable_attack_id,
-                        "stable_attack_code": record.get("stable_attack_code"),
-                        "canonical_name": record.get("canonical_name"),
-                        "attack_family": record.get("attack_family"),
-                        "source_coverage": record.get("source_coverage", []),
-                    },
-                )
-            )
+        points = [
+            self._point_from_record(record, fallback_index=offset)
+            for offset, record in enumerate(stable_records)
+        ]
         self.client.upsert(collection_name=self.collection_name, points=points)
+
+    def upsert_record(self, record: dict[str, Any]) -> None:
+        """Incrementally add or update one stable record."""
+        self._ensure_collection()
+        point = self._point_from_record(record)
+        self.client.upsert(collection_name=self.collection_name, points=[point])
 
     def semantic_recall(
         self,
@@ -60,7 +55,7 @@ class AttackSignatureMemory:
         *,
         top_k: int = 5,
     ) -> list[dict[str, Any]]:
-        query_vector = generate_embedding(build_dedup_text(candidate))
+        query_vector = self._record_vector(candidate)
         response = self.client.query_points(
             collection_name=self.collection_name,
             query=query_vector,
@@ -93,6 +88,62 @@ class AttackSignatureMemory:
                 distance=models.Distance.COSINE,
             ),
         )
+
+    def _point_from_record(
+        self,
+        record: dict[str, Any],
+        *,
+        fallback_index: int | None = None,
+    ) -> models.PointStruct:
+        stable_attack_id = self._stable_attack_key(
+            record,
+            fallback_index=fallback_index,
+        )
+        return models.PointStruct(
+            id=self._record_id(stable_attack_id),
+            vector=self._record_vector(record),
+            payload={
+                "stable_attack_id": stable_attack_id,
+                "stable_attack_code": record.get("stable_attack_code"),
+                "canonical_name": record.get("canonical_name"),
+                "attack_family": record.get("attack_family"),
+                "source_coverage": record.get("source_coverage", []),
+            },
+        )
+
+    def _stable_attack_key(
+        self,
+        record: dict[str, Any],
+        *,
+        fallback_index: int | None = None,
+    ) -> str:
+        stable_attack_id = (
+            record.get("stable_attack_id")
+            or record.get("stable_attack_code")
+            or (
+                f"stable_{fallback_index}"
+                if fallback_index is not None
+                else None
+            )
+        )
+        if not stable_attack_id:
+            raise ValueError("stable_attack_id is required for vector memory upserts")
+        return str(stable_attack_id)
+
+    def _record_id(self, stable_attack_id: str) -> str:
+        return str(uuid5(NAMESPACE_URL, stable_attack_id))
+
+    def _record_text(self, record: dict[str, Any]) -> str:
+        text = record.get("dedup_text")
+        if isinstance(text, str) and text.strip():
+            return text
+        return build_dedup_text(record)
+
+    def _record_vector(self, record: dict[str, Any]) -> list[float]:
+        vector = record.get("embedding_signature")
+        if isinstance(vector, list) and len(vector) == self.vector_size:
+            return [float(value) for value in vector]
+        return generate_embedding(self._record_text(record))
 
     def close(self) -> None:
         self.client.close()

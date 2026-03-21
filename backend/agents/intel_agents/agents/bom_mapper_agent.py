@@ -44,18 +44,21 @@ class BomMapperAgent:
         llm_model: str = "gpt-5-mini",
         llm_temperature: float = 0.0,
         validate_online: bool = False,
+        llm_runtime_config: dict[str, Any] | None = None,
     ) -> None:
         self.resolution_service = resolution_service or ComponentResolutionService()
         self.strategy = strategy
         self.llm_model = llm_model
         self.llm_temperature = llm_temperature
         self.validate_online = validate_online
+        self.llm_runtime_config = llm_runtime_config or {}
 
         self._llm: LangChainLlmBomResolver | None = None
         if strategy in ("llm_required", "llm_optional"):
             self._llm = LangChainLlmBomResolver(
                 model=llm_model,
                 temperature=llm_temperature,
+                runtime_config=self.llm_runtime_config,
             )
             if validate_online and strategy == "llm_required":
                 self._llm.validate_connectivity()
@@ -235,6 +238,11 @@ class BomMapperAgent:
             )
 
         # Step 4: Build audit
+        llm_meta = (
+            dict(getattr(self._llm, "last_invocation_meta", {}) or {})
+            if llm_decision is not None
+            else {}
+        )
         audit = self._build_audit(
             raw_id=raw_id,
             mention_idx=mention_idx,
@@ -243,6 +251,7 @@ class BomMapperAgent:
             llm_decision=llm_decision,
             fallback_reason=fallback_reason,
             candidate_count=len(candidates),
+            llm_meta=llm_meta,
         )
 
         return resolution, audit
@@ -401,7 +410,9 @@ class BomMapperAgent:
         llm_decision: dict[str, Any] | None,
         fallback_reason: str | None,
         candidate_count: int,
+        llm_meta: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        llm_meta = llm_meta or {}
         if llm_decision:
             llm_confidence = float(llm_decision.get("confidence", 0.0))
             llm_decision_val = llm_decision.get("decision", "review_queue")
@@ -420,7 +431,8 @@ class BomMapperAgent:
             mentioned_name=mentioned_name,
             strategy_requested=self.strategy,
             strategy_executed=strategy_executed,
-            llm_model=self.llm_model,
+            llm_model=str(llm_meta.get("llm_model", self.llm_model)),
+            llm_profile_id=llm_meta.get("profile_id"),
             prompt_version=(self._llm.PROMPT_VERSION if self._llm else "n/a"),
             llm_confidence=llm_confidence,
             llm_decision=llm_decision_val,
@@ -428,5 +440,7 @@ class BomMapperAgent:
             fallback_reason=fallback_reason,
             candidate_count=candidate_count,
             selected_component_code=selected_code,
+            llm_wait_seconds=llm_meta.get("wait_seconds"),
+            attempted_profiles=list(llm_meta.get("attempted_profiles", []) or []),
             invoked_at=datetime.now(timezone.utc).isoformat(),
         ).model_dump(mode="python")

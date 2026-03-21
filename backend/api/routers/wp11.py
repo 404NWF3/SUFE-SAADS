@@ -22,11 +22,16 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from backend.agents.intel_agents.orchestrator.runtime import Phase1GraphRuntime
 from backend.agents.intel_agents.orchestrator.state import RunMode, build_initial_state
 from backend.agents.intel_agents.schemas.runtime import RuntimeContextDTO
+from backend.agents.intel_agents.services.runtime_tuning_service import (
+    RuntimeTuningOverridesDTO,
+    apply_tuning_overrides,
+    build_runtime_parameter_catalog,
+)
 from backend.api.run_store import (
     NODE_DISPLAY_NAMES,
     NODE_ORDER,
@@ -213,6 +218,14 @@ class WpRunRequest(BaseModel):
     run_mode: RunMode = "bootstrap"
     target_sources: list[str] | None = None
     runtime_context_overrides: dict[str, Any] | None = None
+    tuning_overrides: RuntimeTuningOverridesDTO | None = None
+
+
+class WpResumeRequest(BaseModel):
+    reuse_run_id: bool = False
+    resume_from_node: str | None = None
+    runtime_context_overrides: dict[str, Any] | None = None
+    tuning_overrides: RuntimeTuningOverridesDTO | None = None
 
 
 # ── 辅助函数 ──────────────────────────────────────────────────────
@@ -245,6 +258,7 @@ def _state_to_snapshot(state: dict[str, Any], run_id: str | None = None) -> dict
         "gap_fill_needed": state.get("gap_fill_needed", False),
         "started_at": state.get("started_at"),
         "finished_at": state.get("finished_at"),
+        "resume_hint": state.get("resume_hint"),
     }
 
 
@@ -262,6 +276,7 @@ def _record_to_run_status(record: RunRecord) -> dict[str, Any]:
         },
         "started_at": record.started_at,
         "completed_at": record.completed_at,
+        "resume_hint": (record.state_snapshot or {}).get("resume_hint"),
         "errors": [
             {
                 "node_name": e.get("node") or e.get("node_name", "unknown"),
@@ -272,6 +287,10 @@ def _record_to_run_status(record: RunRecord) -> dict[str, Any]:
             for e in record.errors
         ],
     }
+
+
+def _raise_422(detail: str, exc: Exception) -> None:
+    raise HTTPException(status_code=422, detail=detail) from exc
 
 
 async def _run_graph_in_background(
@@ -389,6 +408,16 @@ async def get_run_state(run_id: str, request: Request) -> dict[str, Any]:
         return _state_to_snapshot({}, run_id)
 
 
+@router.get("/runtime/parameters")
+async def get_runtime_parameters(request: Request) -> dict[str, Any]:
+    _, store = _get_deps(request)
+    active = store.get_active() or store.get_latest()
+    runtime_context = (
+        (active.state_snapshot or {}).get("runtime_context") if active else None
+    )
+    return build_runtime_parameter_catalog(runtime_context)
+
+
 @router.get("/nodes")
 async def list_nodes(request: Request) -> list[dict[str, Any]]:
     _, store = _get_deps(request)
@@ -452,9 +481,17 @@ async def start_run(body: WpRunRequest, request: Request) -> dict[str, Any]:
         )
 
     ctx = RuntimeContextDTO.default_live(run_mode=body.run_mode)
-    runtime_ctx = ctx.model_dump(mode="python")
-    if body.runtime_context_overrides:
-        runtime_ctx.update(body.runtime_context_overrides)
+    try:
+        runtime_ctx = ctx.model_dump(mode="python")
+        if body.runtime_context_overrides:
+            runtime_ctx.update(body.runtime_context_overrides)
+        if body.tuning_overrides:
+            runtime_ctx = apply_tuning_overrides(runtime_ctx, body.tuning_overrides)
+        runtime_ctx = RuntimeContextDTO.model_validate(runtime_ctx).model_dump(
+            mode="python"
+        )
+    except ValidationError as exc:
+        _raise_422("Invalid runtime_context_overrides or tuning_overrides.", exc)
 
     initial_state = build_initial_state(
         run_mode=body.run_mode,
@@ -468,6 +505,82 @@ async def start_run(body: WpRunRequest, request: Request) -> dict[str, Any]:
     )
     record.task = task
 
+    return _record_to_run_status(record)
+
+
+@router.post("/runs/{run_id}/resume", status_code=202)
+async def resume_run(
+    run_id: str,
+    body: WpResumeRequest,
+    request: Request,
+) -> dict[str, Any]:
+    runtime, store = _get_deps(request)
+
+    active = store.get_active()
+    if active:
+        raise HTTPException(
+            status_code=409, detail="A run is already active; cancel it first"
+        )
+
+    source_record = store.get(run_id)
+    if source_record is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+
+    loop = asyncio.get_running_loop()
+    try:
+        saved_state = source_record.state_snapshot or await loop.run_in_executor(
+            _executor,
+            runtime.get_state,
+            run_id,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Run {run_id} has no recoverable state.",
+        ) from exc
+    saved_runtime_context = dict(saved_state.get("runtime_context") or {})
+    runtime_override = dict(body.runtime_context_overrides or {})
+    try:
+        if body.tuning_overrides:
+            runtime_override = apply_tuning_overrides(
+                {
+                    **saved_runtime_context,
+                    **runtime_override,
+                },
+                body.tuning_overrides,
+            )
+        elif runtime_override:
+            runtime_override = RuntimeContextDTO.model_validate(
+                {
+                    **saved_runtime_context,
+                    **runtime_override,
+                }
+            ).model_dump(mode="python")
+    except ValidationError as exc:
+        _raise_422("Invalid runtime_context_overrides or tuning_overrides.", exc)
+    resume_hint = saved_state.get("resume_hint") or {}
+    resume_from_node = (
+        body.resume_from_node
+        or resume_hint.get("resume_from_node")
+        or saved_state.get("resume_target_node")
+        or "store_raw_records"
+    )
+
+    initial_state = await loop.run_in_executor(
+        _executor,
+        lambda: runtime.prepare_recovered_state(
+            run_id,
+            reuse_run_id=body.reuse_run_id,
+            runtime_context_override=runtime_override or None,
+            resume_from_node=resume_from_node,
+        ),
+    )
+    new_run_id = initial_state["run_id"]
+    record = store.create(new_run_id, initial_state.get("run_mode", "bootstrap"))
+    task = asyncio.create_task(
+        _run_graph_in_background(runtime, store, record, initial_state)
+    )
+    record.task = task
     return _record_to_run_status(record)
 
 

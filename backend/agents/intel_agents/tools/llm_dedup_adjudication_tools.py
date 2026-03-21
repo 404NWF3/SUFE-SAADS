@@ -6,7 +6,10 @@ from typing import Any, Literal
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, ConfigDict, Field
 
-from .llm_client_factory import build_structured_chat_openai
+from .llm_client_factory import (
+    invoke_structured_with_model_pool,
+    list_available_profile_ids,
+)
 
 
 class _StrictModel(BaseModel):
@@ -28,6 +31,7 @@ class LangChainLlmDedupAdjudicator:
         temperature: float = 0.0,
         base_url: str | None = None,
         api_key: str | None = None,
+        runtime_config: dict[str, Any] | None = None,
     ) -> None:
         self.model = model
         self.temperature = temperature
@@ -35,9 +39,19 @@ class LangChainLlmDedupAdjudicator:
             base_url or os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL")
         )
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.runtime_config = runtime_config or {}
+        self.last_invocation_meta: dict[str, Any] = {}
 
     def is_available(self) -> bool:
-        return bool(self.api_key)
+        return bool(
+            list_available_profile_ids(
+                task_name="dedup_adjudication",
+                default_model=self.model,
+                base_url=self.base_url,
+                api_key=self.api_key,
+                runtime_config=self.runtime_config,
+            )
+        )
 
     def validate_connectivity(self) -> None:
         if not self.is_available():
@@ -47,13 +61,7 @@ class LangChainLlmDedupAdjudicator:
 
     def adjudicate(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.validate_connectivity()
-        llm = build_structured_chat_openai(
-            model=self.model,
-            temperature=self.temperature,
-            base_url=self.base_url,
-            api_key=self.api_key,
-        )
-        structured_llm = llm.with_structured_output(LlmDedupAdjudicationResult, method="function_calling")
+        self.last_invocation_meta = {}
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -72,10 +80,16 @@ class LangChainLlmDedupAdjudicator:
                 ),
             ]
         )
-        chain = prompt | structured_llm
-        result = chain.invoke(payload)
-        if isinstance(result, LlmDedupAdjudicationResult):
-            return result.model_dump(mode="python")
-        return LlmDedupAdjudicationResult.model_validate(result).model_dump(
-            mode="python"
+        result, meta = invoke_structured_with_model_pool(
+            task_name="dedup_adjudication",
+            prompt=prompt,
+            schema=LlmDedupAdjudicationResult,
+            payload=payload,
+            default_model=self.model,
+            temperature=self.temperature,
+            base_url=self.base_url,
+            api_key=self.api_key,
+            runtime_config=self.runtime_config,
         )
+        self.last_invocation_meta = meta
+        return result

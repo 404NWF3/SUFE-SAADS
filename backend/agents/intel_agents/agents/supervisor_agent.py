@@ -20,14 +20,17 @@ class SupervisorAgent:
         llm_temperature: float = 0.0,
         validate_online: bool = False,
         planner: Any | None = None,
+        llm_runtime_config: dict[str, Any] | None = None,
     ) -> None:
         self.strategy = strategy
         self.llm_model = llm_model
         self.llm_temperature = llm_temperature
         self.validate_online = validate_online
+        self.llm_runtime_config = llm_runtime_config or {}
         self.planner = planner or LangChainLlmSupervisorPlanner(
             model=llm_model,
             temperature=llm_temperature,
+            runtime_config=self.llm_runtime_config,
         )
 
     def plan_run(
@@ -39,41 +42,17 @@ class SupervisorAgent:
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         context = RuntimeContextDTO.model_validate(
             {
-                "run_mode": runtime_context.get("run_mode", "bootstrap"),
-                "source_registry": runtime_context.get("source_registry", []),
+                **runtime_context,
                 "coverage_snapshot": coverage_snapshot,
                 "source_quality_rows": source_quality_rows,
-                "query_feedback_rows": query_feedback_rows or [],
-                "gap_fill_dispatch_plans": runtime_context.get(
-                    "gap_fill_dispatch_plans", []
-                ),
-                "coverage_feedback_rows": runtime_context.get(
-                    "coverage_feedback_rows", []
-                ),
-                "pending_queue_summary": runtime_context.get(
-                    "pending_queue_summary", {}
-                ),
-                "coverage_max_gap_fill_plans": runtime_context.get(
-                    "coverage_max_gap_fill_plans", 3
-                ),
-                "coverage_max_gap_fill_rounds": runtime_context.get(
-                    "coverage_max_gap_fill_rounds", 1
-                ),
-                "planning_strategy": runtime_context.get(
-                    "planning_strategy", "rules_only"
-                ),
-                "llm_model": runtime_context.get("llm_model", "gpt-5-mini"),
-                "llm_temperature": runtime_context.get("llm_temperature", 0.0),
-                "validate_llm_online": runtime_context.get(
-                    "validate_llm_online", False
-                ),
-                "failure_injection": runtime_context.get("failure_injection"),
+                "query_feedback_rows": query_feedback_rows
+                or runtime_context.get("query_feedback_rows", []),
             }
         )
         invoked_at = datetime.now(timezone.utc).isoformat()
 
         if context.run_mode == "gap_fill" and context.gap_fill_dispatch_plans:
-            plan = self._gap_fill_plan(context)
+            plan = self._apply_plan_limits(context, self._gap_fill_plan(context))
             return plan, self._build_audit(
                 plan,
                 strategy_executed="gap_fill_dispatch",
@@ -84,7 +63,7 @@ class SupervisorAgent:
             )
 
         if self.strategy in ("rules_only", "rules_only_degraded"):
-            plan = self._heuristic_plan(context)
+            plan = self._apply_plan_limits(context, self._heuristic_plan(context))
             return plan, self._build_audit(
                 plan,
                 strategy_executed=self.strategy,
@@ -113,7 +92,9 @@ class SupervisorAgent:
                     "pending_queue_summary": context.pending_queue_summary,
                 }
             )
+            llm_meta = dict(getattr(self.planner, "last_invocation_meta", {}) or {})
             plan, fusion_fallback_reason = self._fuse_llm_plan(context, llm_plan)
+            plan = self._apply_plan_limits(context, plan)
             confidence = float(llm_plan.get("confidence", 0.0))
             return plan, self._build_audit(
                 plan,
@@ -124,13 +105,14 @@ class SupervisorAgent:
                 feedback_rows_used=len(context.query_feedback_rows),
                 fallback_reason=fusion_fallback_reason,
                 invoked_at=invoked_at,
+                llm_meta=llm_meta,
             )
         except Exception as exc:
             if self.strategy == "llm_required":
                 raise RuntimeError(
                     f"LLM supervisor planning required but failed: {exc}"
                 ) from exc
-            plan = self._heuristic_plan(context)
+            plan = self._apply_plan_limits(context, self._heuristic_plan(context))
             return plan, self._build_audit(
                 plan,
                 strategy_executed="rules_only_degraded",
@@ -384,11 +366,14 @@ class SupervisorAgent:
         feedback_rows_used: int,
         fallback_reason: str | None,
         invoked_at: str,
+        llm_meta: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        llm_meta = llm_meta or {}
         return LlmPlanningAuditDTO(
             strategy_requested=self.strategy,
             strategy_executed=strategy_executed,
-            llm_model=self.llm_model,
+            llm_model=str(llm_meta.get("llm_model", self.llm_model)),
+            llm_profile_id=llm_meta.get("profile_id"),
             prompt_version=getattr(self.planner, "PROMPT_VERSION", "rules-only"),
             plan_rationale=str(plan.get("rationale", "")),
             source_plan_count=len(plan.get("source_plans", [])),
@@ -398,8 +383,64 @@ class SupervisorAgent:
             confidence=confidence,
             feedback_rows_used=feedback_rows_used,
             fallback_reason=fallback_reason,
+            llm_wait_seconds=llm_meta.get("wait_seconds"),
+            attempted_profiles=list(llm_meta.get("attempted_profiles", []) or []),
             invoked_at=invoked_at,
         ).model_dump(mode="python")
+
+    def _apply_plan_limits(
+        self, context: RuntimeContextDTO, plan: dict[str, Any]
+    ) -> dict[str, Any]:
+        source_plans: list[dict[str, Any]] = []
+        for row in plan.get("source_plans", []):
+            source_plan = dict(row)
+            if context.planning_max_items_per_source is not None:
+                source_plan["max_results"] = min(
+                    int(
+                        source_plan.get(
+                            "max_results", context.planning_max_items_per_source
+                        )
+                    ),
+                    context.planning_max_items_per_source,
+                )
+            source_plans.append(source_plan)
+
+        default_parallel = max(
+            1,
+            min(len(source_plans), int(plan.get("max_parallel_sources", 1))),
+        )
+        if context.planning_max_parallel_sources is not None:
+            max_parallel_sources = min(
+                context.planning_max_parallel_sources,
+                max(1, len(source_plans)) if source_plans else 1,
+            )
+        else:
+            max_parallel_sources = default_parallel
+
+        if context.planning_reflection_enabled is None:
+            reflection_enabled = bool(plan.get("reflection_enabled", True))
+        else:
+            reflection_enabled = context.planning_reflection_enabled
+        if context.planning_max_reflection_rounds is None:
+            max_reflection_rounds = int(plan.get("max_reflection_rounds", 1))
+        else:
+            max_reflection_rounds = context.planning_max_reflection_rounds
+        if not reflection_enabled:
+            max_reflection_rounds = 0
+
+        max_items_per_source = int(
+            context.planning_max_items_per_source
+            if context.planning_max_items_per_source is not None
+            else plan.get("max_items_per_source", 10)
+        )
+        return {
+            **plan,
+            "source_plans": source_plans,
+            "max_parallel_sources": max_parallel_sources,
+            "max_items_per_source": max(1, max_items_per_source),
+            "max_reflection_rounds": max(0, max_reflection_rounds),
+            "reflection_enabled": reflection_enabled,
+        }
 
 
 def _seed_query_for(source_name: str) -> str:

@@ -23,6 +23,9 @@ from ..tools import (
 )
 from ..tools.llm_merge_judge_tools import LangChainLlmMergeJudge
 
+DEDUP_MINHASH_SIZE = 16
+DEDUP_EMBEDDING_SIZE = 32
+
 
 class DedupMergeAgent:
     """Phase 4 dedup / merge agent with LLM-primary merge judge.
@@ -58,6 +61,7 @@ class DedupMergeAgent:
         llm_temperature: float = 0.0,
         validate_online: bool = False,
         merge_judge: Any | None = None,
+        llm_runtime_config: dict[str, Any] | None = None,
     ):
         self.vector_memory = vector_memory
         self.adjudicator = adjudicator
@@ -65,9 +69,11 @@ class DedupMergeAgent:
         self.llm_model = llm_model
         self.llm_temperature = llm_temperature
         self.validate_online = validate_online
+        self.llm_runtime_config = llm_runtime_config or {}
         self.merge_judge = merge_judge or LangChainLlmMergeJudge(
             model=llm_model,
             temperature=llm_temperature,
+            runtime_config=self.llm_runtime_config,
         )
 
     # ------------------------------------------------------------------
@@ -87,7 +93,10 @@ class DedupMergeAgent:
             (dedup_result, llm_dedup_judgments)
         """
         records = [self._build_candidate(item) for item in items]
-        stable_records = [deepcopy(record) for record in (existing_records or [])]
+        stable_records = [
+            self._normalize_stable_record(deepcopy(record))
+            for record in (existing_records or [])
+        ]
         if self.vector_memory is not None:
             self.vector_memory.rebuild_index(stable_records)
 
@@ -144,6 +153,10 @@ class DedupMergeAgent:
                 top_k_candidates=recalled,
                 llm_judgment=llm_judgment,
             )
+            stable_record = self._normalize_stable_record(
+                stable_record,
+                refresh=decision["decision"] == "merge",
+            )
 
             # Update llm_audit with final fused decision if available
             if llm_audit is not None:
@@ -161,7 +174,7 @@ class DedupMergeAgent:
                 self._build_resolved_item(candidate, stable_record, decision)
             )
             if self.vector_memory is not None:
-                self.vector_memory.rebuild_index(stable_records)
+                self.vector_memory.upsert_record(stable_record)
 
         dedup_merged_count = sum(1 for row in decisions if row["decision"] == "merge")
         new_attack_count = sum(1 for row in decisions if row["decision"] == "new")
@@ -209,6 +222,7 @@ class DedupMergeAgent:
                 rule_prior_reasons=rule_prior_reasons,
             )
             result = self.merge_judge.judge(payload)
+            llm_meta = dict(getattr(self.merge_judge, "last_invocation_meta", {}) or {})
 
             # Build audit
             audit = {
@@ -217,7 +231,8 @@ class DedupMergeAgent:
                 "existing_stable_id": matched.get("stable_attack_id"),
                 "strategy_requested": self.strategy,
                 "strategy_executed": "llm_primary",
-                "llm_model": self.llm_model,
+                "llm_model": llm_meta.get("llm_model", self.llm_model),
+                "llm_profile_id": llm_meta.get("profile_id"),
                 "prompt_version": self.merge_judge.PROMPT_VERSION,
                 "llm_confidence": result.get("confidence", 0.0),
                 "llm_verdict": result.get("verdict", "uncertain"),
@@ -229,6 +244,10 @@ class DedupMergeAgent:
                 "fusion_agreed": True,  # updated later
                 "overall_similarity_score": best.get("score", 0.0),
                 "bom_delta_detected": best.get("bom_delta_detected", False),
+                "llm_wait_seconds": llm_meta.get("wait_seconds"),
+                "attempted_profiles": list(
+                    llm_meta.get("attempted_profiles", []) or []
+                ),
                 "invoked_at": invoked_at,
             }
             return result, audit
@@ -566,6 +585,42 @@ class DedupMergeAgent:
     # ------------------------------------------------------------------
     # Stable record management (unchanged from original)
     # ------------------------------------------------------------------
+
+    def _normalize_stable_record(
+        self,
+        record: dict[str, Any],
+        *,
+        refresh: bool = False,
+    ) -> dict[str, Any]:
+        text = record.get("dedup_text")
+        if refresh or not isinstance(text, str) or not text.strip():
+            text = build_dedup_text(record)
+            record["dedup_text"] = text
+
+        if refresh or not record.get("content_hash_signature"):
+            record["content_hash_signature"] = compute_content_hash(record)
+
+        simhash_signature = record.get("simhash_signature")
+        if refresh or not isinstance(simhash_signature, int):
+            record["simhash_signature"] = compute_simhash(text)
+
+        minhash_signature = record.get("minhash_signature")
+        if (
+            refresh
+            or not isinstance(minhash_signature, list)
+            or len(minhash_signature) != DEDUP_MINHASH_SIZE
+        ):
+            record["minhash_signature"] = compute_minhash(text)
+
+        embedding_signature = record.get("embedding_signature")
+        if (
+            refresh
+            or not isinstance(embedding_signature, list)
+            or len(embedding_signature) != DEDUP_EMBEDDING_SIZE
+        ):
+            record["embedding_signature"] = generate_embedding(text)
+
+        return record
 
     def _new_stable_record(
         self, candidate: dict[str, Any], *, decision: str

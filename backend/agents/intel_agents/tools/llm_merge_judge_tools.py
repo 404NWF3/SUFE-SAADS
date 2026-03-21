@@ -6,7 +6,10 @@ from typing import Any, Literal
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-from .llm_client_factory import build_structured_chat_openai
+from .llm_client_factory import (
+    invoke_structured_with_model_pool,
+    list_available_profile_ids,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +186,7 @@ class LangChainLlmMergeJudge:
         temperature: float = 0.0,
         base_url: str | None = None,
         api_key: str | None = None,
+        runtime_config: dict[str, Any] | None = None,
     ) -> None:
         self.model = model
         self.temperature = temperature
@@ -190,9 +194,19 @@ class LangChainLlmMergeJudge:
             base_url or os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL")
         )
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.runtime_config = runtime_config or {}
+        self.last_invocation_meta: dict[str, Any] = {}
 
     def is_available(self) -> bool:
-        return bool(self.api_key)
+        return bool(
+            list_available_profile_ids(
+                task_name="dedup_merge",
+                default_model=self.model,
+                base_url=self.base_url,
+                api_key=self.api_key,
+                runtime_config=self.runtime_config,
+            )
+        )
 
     def validate_connectivity(self) -> None:
         if not self.is_available():
@@ -219,21 +233,14 @@ class LangChainLlmMergeJudge:
             raise RuntimeError(
                 "LLM merge judge requested but OPENAI_API_KEY is not configured."
             )
+        self.last_invocation_meta = {}
 
-        llm = build_structured_chat_openai(
-            model=self.model,
-            temperature=self.temperature,
-            base_url=self.base_url,
-            api_key=self.api_key,
-        )
-        structured_llm = llm.with_structured_output(LlmMergeJudgment, method="function_calling")
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", _SYSTEM_PROMPT),
                 ("user", _USER_TEMPLATE),
             ]
         )
-        chain = prompt | structured_llm
 
         invoke_payload = {
             "candidate_canonical_name": str(
@@ -277,10 +284,19 @@ class LangChainLlmMergeJudge:
             "rule_prior_decision": str(payload.get("rule_prior_decision", "unknown")),
             "rule_prior_reasons": str(payload.get("rule_prior_reasons", [])),
         }
-        result = chain.invoke(invoke_payload)
-        if isinstance(result, LlmMergeJudgment):
-            return result.model_dump(mode="python")
-        return LlmMergeJudgment.model_validate(result).model_dump(mode="python")
+        result, meta = invoke_structured_with_model_pool(
+            task_name="dedup_merge",
+            prompt=prompt,
+            schema=LlmMergeJudgment,
+            payload=invoke_payload,
+            default_model=self.model,
+            temperature=self.temperature,
+            base_url=self.base_url,
+            api_key=self.api_key,
+            runtime_config=self.runtime_config,
+        )
+        self.last_invocation_meta = meta
+        return result
 
     @staticmethod
     def format_judge_payload(

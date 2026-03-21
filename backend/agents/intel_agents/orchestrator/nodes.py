@@ -33,6 +33,7 @@ from ..services.gap_scoring_service import GapScoringService
 from ..services.query_feedback_memory import QueryFeedbackMemoryService
 from ..services.raw_ingest_flow import RawIngestFlow
 from ..services.source_health_service import SourceHealthService
+from ..tools.llm_client_factory import LlmInvocationError
 
 
 def _utcnow() -> str:
@@ -74,6 +75,7 @@ def _with_state_defaults(state: dict[str, Any]) -> dict[str, Any]:
     cloned.setdefault("gap_fill_needed", False)
     cloned.setdefault("gap_fill_rationale", "")
     cloned.setdefault("collector_plans", {})
+    cloned.setdefault("resume_hint", None)
     return cloned
 
 
@@ -128,6 +130,46 @@ def _record_error(
             occurred_at=_utcnow(),
         ).model_dump(mode="python")
     ]
+
+
+def _find_llm_invocation_error(exc: Exception) -> LlmInvocationError | None:
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, LlmInvocationError):
+            return current
+        current = current.__cause__ or current.__context__
+    return None
+
+
+def _build_resume_hint(
+    state: dict[str, Any], *, node_name: str, exc: Exception
+) -> dict[str, Any] | None:
+    context = _runtime_context(state)
+    if not context.llm_resume_on_exhausted_retry:
+        return None
+    llm_error = _find_llm_invocation_error(exc)
+    if llm_error is None:
+        return None
+    resume_map = {
+        "parse_and_standardize": "parse_and_standardize",
+        "resolve_ai_bom": "resolve_ai_bom",
+        "coverage_gap_analysis": "coverage_gap_analysis",
+    }
+    resume_from_node = resume_map.get(node_name)
+    if resume_from_node is None:
+        return None
+    hint = {
+        "resume_from_node": resume_from_node,
+        "reason": str(exc),
+        "error_family": llm_error.error_family,
+        "recommended_tuning_changes": list(llm_error.recommended_tuning_changes),
+        "attempted_profiles": list(llm_error.attempted_profiles),
+    }
+    if llm_error.retry_after_seconds > 0:
+        hint["retry_after_seconds"] = llm_error.retry_after_seconds
+    return hint
 
 
 def _maybe_inject_failure(state: dict[str, Any], node_name: str, attempt: int) -> None:
@@ -200,8 +242,10 @@ def _execute_with_retries(
             patch = worker(current_state)
             return _finalize_success_patch(current_state, node_name, attempt, patch)
         except Exception as exc:
-            retryable = attempt < max_attempts
-            if retryable:
+            llm_error = _find_llm_invocation_error(exc)
+            should_retry_node = attempt < max_attempts and llm_error is None
+            retryable = should_retry_node or llm_error is not None
+            if should_retry_node:
                 continue
             return validate_patch(
                 {
@@ -218,7 +262,12 @@ def _execute_with_retries(
                         current_state,
                         node_name=node_name,
                         exc=exc,
-                        retryable=False,
+                        retryable=retryable,
+                    ),
+                    "resume_hint": _build_resume_hint(
+                        current_state,
+                        node_name=node_name,
+                        exc=exc,
                     ),
                 }
             )
@@ -250,6 +299,7 @@ def supervisor_plan_node(state: dict[str, Any]) -> dict[str, Any]:
             llm_model=context.llm_model,
             llm_temperature=context.llm_temperature,
             validate_online=context.validate_llm_online,
+            llm_runtime_config=context.model_dump(mode="python"),
         ).plan_run(
             context.model_dump(mode="python"),
             context.coverage_snapshot,
@@ -589,6 +639,7 @@ def reflect_search_strategy_node(state: dict[str, Any]) -> dict[str, Any]:
             llm_model=context.llm_model,
             llm_temperature=context.llm_temperature,
             validate_online=context.validate_llm_online,
+            llm_runtime_config=context.model_dump(mode="python"),
         ).reflect(
             current_state.get("source_execution_stats", []),
             current_state.get("query_telemetry", []),
@@ -765,6 +816,8 @@ def parse_and_standardize_node(state: dict[str, Any]) -> dict[str, Any]:
             llm_model=context.llm_model,
             llm_temperature=context.llm_temperature,
             validate_online=context.validate_llm_online,
+            llm_runtime_config=context.model_dump(mode="python"),
+            standardization_max_concurrency=context.standardization_max_concurrency,
         ).standardize_batch(
             current_state.get("raw_items", []),
             current_state.get("stored_raw_records", []),
@@ -798,11 +851,13 @@ def semantic_dedup_and_merge_node(state: dict[str, Any]) -> dict[str, Any]:
                     llm_model=context.llm_model,
                     llm_temperature=context.llm_temperature,
                     validate_online=context.validate_llm_online,
+                    llm_runtime_config=context.model_dump(mode="python"),
                 ),
                 strategy=context.dedup_merge_strategy,
                 llm_model=context.llm_model,
                 llm_temperature=context.llm_temperature,
                 validate_online=context.validate_llm_online,
+                llm_runtime_config=context.model_dump(mode="python"),
             ).dedup_and_merge(
                 current_state.get("standardized_items", []),
                 existing_records=existing_records,
@@ -841,6 +896,7 @@ def resolve_ai_bom_node(state: dict[str, Any]) -> dict[str, Any]:
             llm_model=context.llm_model,
             llm_temperature=context.llm_temperature,
             validate_online=context.validate_llm_online,
+            llm_runtime_config=context.model_dump(mode="python"),
         ).resolve_batch(
             current_state.get("standardized_items", []),
             trace_id=current_state.get("trace_id"),
@@ -952,6 +1008,7 @@ def coverage_gap_analysis_node(state: dict[str, Any]) -> dict[str, Any]:
             llm_model=context.llm_model,
             llm_temperature=context.llm_temperature,
             validate_online=context.validate_llm_online,
+            llm_runtime_config=context.model_dump(mode="python"),
         ).analyze(
             candidate_rows,
             runtime_context=current_state.get("runtime_context", {}),

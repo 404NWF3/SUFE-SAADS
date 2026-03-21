@@ -267,6 +267,92 @@ def test_phase4_vector_memory_semantic_recall(tmp_path: Path) -> None:
     memory.close()
 
 
+def test_phase4_vector_memory_upsert_overwrites_existing_point_without_reembedding(
+    tmp_path: Path,
+) -> None:
+    memory = AttackSignatureMemory(base_dir=str(tmp_path / "qdrant"))
+    original = {
+        "stable_attack_id": "stable-1",
+        "stable_attack_code": "stable-1",
+        "canonical_name": "Prompt Injection via Agent Tooling",
+        "attack_family": "prompt_injection",
+        "source_coverage": ["github_advisories"],
+        "dedup_text": "prompt injection via agent tooling",
+        "embedding_signature": [1.0] + [0.0] * 31,
+    }
+    updated = {
+        **original,
+        "canonical_name": "Updated Prompt Injection Signature",
+        "source_coverage": ["mitre_attack"],
+        "embedding_signature": [0.0, 1.0] + [0.0] * 30,
+    }
+    candidate = {
+        "embedding_signature": updated["embedding_signature"],
+        "dedup_text": updated["dedup_text"],
+    }
+
+    with patch(
+        "agents.intel_agents.services.attack_signature_memory.generate_embedding",
+        side_effect=AssertionError("unexpected re-embedding"),
+    ):
+        memory.upsert_record(original)
+        memory.upsert_record(updated)
+        recalled = memory.semantic_recall(candidate, top_k=3)
+
+    assert recalled
+    assert recalled[0]["stable_attack_id"] == "stable-1"
+    assert recalled[0]["canonical_name"] == "Updated Prompt Injection Signature"
+    assert recalled[0]["source_coverage"] == ["mitre_attack"]
+    memory.close()
+
+
+def test_phase4_existing_records_without_signatures_are_normalized() -> None:
+    existing = {
+        "stable_attack_id": "stable-db-1",
+        "stable_attack_code": "stable-db-1",
+        "canonical_name": "Prompt Injection via Agent Tooling",
+        "attack_family": "prompt_injection",
+        "severity_level": "high",
+        "summary": "Prompt injection in agent tools enables misuse.",
+        "description": "Prompt injection in agent tools enables misuse.",
+        "taxonomy_items": [{"taxonomy_code": "OWASP-LLM-01"}],
+        "cvss_hint": None,
+        "bom_mentions": [{"mentioned_name": "langchain"}],
+        "evidence_refs": ["artifact://seed"],
+        "source_coverage": ["db_primary"],
+        "related_raw_ids": ["raw-seed"],
+        "member_attack_codes": ["ATTACK-SEED"],
+        "last_decision": "merge",
+        "confidence_score": 0.8,
+    }
+    candidate = _base_item(
+        raw_id="raw-new",
+        attack_code="ATTACK-NEW",
+        summary="Training data inversion leaks memorized examples from a foundation model.",
+        bom=["pytorch"],
+        canonical_name="Training Data Inversion via Model Leakage",
+        attack_family="model_inversion",
+        taxonomy_code="OWASP-LLM-06",
+        taxonomy_name="Sensitive Information Disclosure",
+    )
+
+    result, _ = DedupMergeAgent(strategy="rules_only").dedup_and_merge(
+        [candidate],
+        existing_records=[existing],
+    )
+
+    normalized = next(
+        row
+        for row in result["stable_attack_records"]
+        if row["stable_attack_id"] == "stable-db-1"
+    )
+    assert normalized["dedup_text"]
+    assert normalized["content_hash_signature"]
+    assert isinstance(normalized["simhash_signature"], int)
+    assert len(normalized["minhash_signature"]) == 16
+    assert len(normalized["embedding_signature"]) == 32
+
+
 def test_phase4_adjudicator_overrides_merge_when_bom_delta_exists() -> None:
     adjudicator = DedupAdjudicatorAgent()
     decision = adjudicator.adjudicate(
@@ -788,6 +874,106 @@ def test_phase4_multi_item_batch_with_mixed_decisions() -> None:
         "new",
     ]
     assert len(llm_audits) == 3
+
+
+def test_phase4_vector_memory_rebuilds_once_and_upserts_final_records() -> None:
+    stable = _stable_record_from_item(
+        _base_item(
+            raw_id="seed-1",
+            attack_code="ATTACK-SEED",
+            summary="Prompt injection in agent tools enables tool misuse.",
+            bom=["langchain"],
+        )
+    )
+
+    class FakeVectorMemory:
+        def __init__(self) -> None:
+            self.rebuild_snapshots: list[list[str]] = []
+            self.upserted_records: list[dict[str, Any]] = []
+
+        def rebuild_index(self, stable_records: list[dict[str, Any]]) -> None:
+            self.rebuild_snapshots.append(
+                [str(row.get("stable_attack_id")) for row in stable_records]
+            )
+
+        def upsert_record(self, record: dict[str, Any]) -> None:
+            self.upserted_records.append(
+                {
+                    "stable_attack_id": str(record.get("stable_attack_id")),
+                    "last_decision": str(record.get("last_decision")),
+                    "related_raw_ids": list(record.get("related_raw_ids", [])),
+                    "source_coverage": list(record.get("source_coverage", [])),
+                }
+            )
+
+        def semantic_recall(
+            self,
+            candidate: dict[str, Any],
+            *,
+            top_k: int = 5,
+        ) -> list[dict[str, Any]]:
+            return []
+
+    memory = FakeVectorMemory()
+    agent = DedupMergeAgent(
+        strategy="llm_required",
+        merge_judge=FakeMergeJudge(
+            [
+                _llm_judgment(verdict="same_attack", action="merge", confidence=0.92),
+                _llm_judgment(
+                    verdict="same_attack_but_component_delta",
+                    action="review",
+                    confidence=0.9,
+                ),
+                _llm_judgment(
+                    verdict="different_attack",
+                    action="new",
+                    confidence=0.95,
+                ),
+            ]
+        ),
+        vector_memory=memory,
+    )
+    items = [
+        _base_item(
+            raw_id="raw-merge",
+            attack_code="ATTACK-MERGE",
+            summary="Prompt injection in agent tools enables tool misuse and prompt bypass.",
+            bom=["langchain"],
+        ),
+        _base_item(
+            raw_id="raw-review",
+            attack_code="ATTACK-REVIEW",
+            summary="Prompt injection in agent tools enables tool misuse.",
+            bom=["llamaindex"],
+        ),
+        _base_item(
+            raw_id="raw-new",
+            attack_code="ATTACK-NEW",
+            summary="Training data inversion leaks memorized examples from a foundation model.",
+            bom=["pytorch"],
+            canonical_name="Training Data Inversion via Model Leakage",
+            attack_family="model_inversion",
+            taxonomy_code="OWASP-LLM-06",
+            taxonomy_name="Sensitive Information Disclosure",
+        ),
+    ]
+
+    result, _ = agent.dedup_and_merge(items, existing_records=[stable])
+
+    assert [row["decision"] for row in result["dedup_decisions"]] == [
+        "merge",
+        "review",
+        "new",
+    ]
+    assert memory.rebuild_snapshots == [[stable["stable_attack_id"]]]
+    assert [row["last_decision"] for row in memory.upserted_records] == [
+        "merge",
+        "review",
+        "new",
+    ]
+    assert memory.upserted_records[0]["stable_attack_id"] == stable["stable_attack_id"]
+    assert "raw-merge" in memory.upserted_records[0]["related_raw_ids"]
 
 
 def test_phase4_semantic_dedup_node_emits_llm_judgments() -> None:

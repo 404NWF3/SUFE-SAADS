@@ -21,13 +21,17 @@ class CoverageAnalystAgent:
         llm_temperature: float = 0.0,
         validate_online: bool = False,
         analyst: Any | None = None,
+        llm_runtime_config: dict[str, Any] | None = None,
     ) -> None:
         self.strategy = strategy
         self.llm_model = llm_model
         self.llm_temperature = llm_temperature
         self.validate_online = validate_online
+        self.llm_runtime_config = llm_runtime_config or {}
         self.analyst = analyst or LangChainLlmCoverageAnalyst(
-            model=llm_model, temperature=llm_temperature
+            model=llm_model,
+            temperature=llm_temperature,
+            runtime_config=self.llm_runtime_config,
         )
 
     def analyze(
@@ -187,13 +191,19 @@ class CoverageAnalystAgent:
                     }
                 )
             ).model_dump(mode="python")
+            llm_meta = dict(getattr(self.analyst, "last_invocation_meta", {}) or {})
             decision["should_dispatch_gap_fill"] = bool(
                 decision.get("should_dispatch_gap_fill", False)
                 and float(decision.get("estimated_gap_fill_roi", 0.0))
                 >= min_roi_threshold
             )
             return decision, self._build_audit(
-                candidate, decision, "llm_primary", invoked_at, None
+                candidate,
+                decision,
+                "llm_primary",
+                invoked_at,
+                None,
+                llm_meta=llm_meta,
             )
         except Exception as exc:
             if self.strategy == "llm_required":
@@ -254,12 +264,15 @@ class CoverageAnalystAgent:
         strategy_executed: str,
         invoked_at: str,
         fallback_reason: str | None,
+        llm_meta: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        llm_meta = llm_meta or {}
         return LlmCoverageAnalysisAuditDTO(
             gap_id=str(candidate.get("gap_id", "unknown_gap")),
             strategy_requested=self.strategy,
             strategy_executed=strategy_executed,
-            llm_model=self.llm_model,
+            llm_model=str(llm_meta.get("llm_model", self.llm_model)),
+            llm_profile_id=llm_meta.get("profile_id"),
             prompt_version=getattr(self.analyst, "PROMPT_VERSION", "rules-only"),
             gap_type=str(
                 decision.get("gap_type", candidate.get("gap_axis", "uncertain"))
@@ -272,6 +285,8 @@ class CoverageAnalystAgent:
             recommended_source_count=len(decision.get("recommended_sources", [])),
             recommended_query_count=len(decision.get("recommended_queries", [])),
             fallback_reason=fallback_reason,
+            llm_wait_seconds=llm_meta.get("wait_seconds"),
+            attempted_profiles=list(llm_meta.get("attempted_profiles", []) or []),
             invoked_at=invoked_at,
         ).model_dump(mode="python")
 

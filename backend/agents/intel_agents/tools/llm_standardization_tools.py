@@ -7,7 +7,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from langchain_core.prompts import ChatPromptTemplate
 
-from .llm_client_factory import build_structured_chat_openai
+from .llm_client_factory import (
+    invoke_structured_with_model_pool,
+    list_available_profile_ids,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +181,7 @@ class LangChainLlmStandardizer:
         temperature: float = 0.0,
         base_url: str | None = None,
         api_key: str | None = None,
+        runtime_config: dict[str, Any] | None = None,
     ) -> None:
         self.model = model
         self.temperature = temperature
@@ -185,9 +189,19 @@ class LangChainLlmStandardizer:
             base_url or os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL")
         )
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.runtime_config = runtime_config or {}
+        self.last_invocation_meta: dict[str, Any] = {}
 
     def is_available(self) -> bool:
-        return bool(self.api_key)
+        return bool(
+            list_available_profile_ids(
+                task_name="standardization",
+                default_model=self.model,
+                base_url=self.base_url,
+                api_key=self.api_key,
+                runtime_config=self.runtime_config,
+            )
+        )
 
     def validate_connectivity(self) -> None:
         if not self.is_available():
@@ -213,21 +227,14 @@ class LangChainLlmStandardizer:
             raise RuntimeError(
                 "LLM standardization requested but OPENAI_API_KEY is not configured."
             )
+        self.last_invocation_meta = {}
 
-        llm = build_structured_chat_openai(
-            model=self.model,
-            temperature=self.temperature,
-            base_url=self.base_url,
-            api_key=self.api_key,
-        )
-        structured_llm = llm.with_structured_output(LlmStandardizationResult, method="function_calling")
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", _SYSTEM_PROMPT),
                 ("user", _USER_TEMPLATE),
             ]
         )
-        chain = prompt | structured_llm
 
         # Truncate payload to avoid token overflow while preserving key content
         invoke_payload = {
@@ -237,7 +244,16 @@ class LangChainLlmStandardizer:
             "summary": payload.get("summary", ""),
             "cleaned_payload": str(payload.get("cleaned_payload", ""))[:6000],
         }
-        result = chain.invoke(invoke_payload)
-        if isinstance(result, LlmStandardizationResult):
-            return result.model_dump(mode="python")
-        return LlmStandardizationResult.model_validate(result).model_dump(mode="python")
+        result, meta = invoke_structured_with_model_pool(
+            task_name="standardization",
+            prompt=prompt,
+            schema=LlmStandardizationResult,
+            payload=invoke_payload,
+            default_model=self.model,
+            temperature=self.temperature,
+            base_url=self.base_url,
+            api_key=self.api_key,
+            runtime_config=self.runtime_config,
+        )
+        self.last_invocation_meta = meta
+        return {**result, "_llm_meta": meta}
