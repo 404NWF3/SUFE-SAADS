@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Literal, cast
 
@@ -23,8 +24,10 @@ class CoverageAnalystAgent:
         validate_online: bool = False,
         analyst: Any | None = None,
         llm_runtime_config: dict[str, Any] | None = None,
+        max_concurrency: int = 4,
     ) -> None:
         self.strategy = strategy
+        self.max_concurrency = max(1, max_concurrency)
         self.llm_runtime_config = llm_runtime_config or {}
         self.llm_model = resolve_default_model(
             llm_model,
@@ -54,16 +57,33 @@ class CoverageAnalystAgent:
             for item in runtime_context.get("source_registry", [])
             if item.get("source_name")
         }
-        for candidate in gap_candidates[:max_gap_fill_plans]:
+
+        candidates_slice = gap_candidates[:max_gap_fill_plans]
+        if not candidates_slice:
+            return coverage_gaps, dispatch_plans, audits
+
+        def _process_candidate(
+            candidate: dict[str, Any],
+        ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
             decision, audit = self._decide_gap_fill(
                 candidate,
                 runtime_context=runtime_context,
                 min_roi_threshold=min_roi_threshold,
             )
-            decision = _filter_decision_sources(
-                decision,
-                allowed_sources=allowed_sources,
-            )
+            decision = _filter_decision_sources(decision, allowed_sources=allowed_sources)
+            return candidate, decision, audit
+
+        max_workers = min(self.max_concurrency, max(1, len(candidates_slice)))
+        proc_results: list[Any] = [None] * len(candidates_slice)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {
+                executor.submit(_process_candidate, c): i
+                for i, c in enumerate(candidates_slice)
+            }
+            for future in as_completed(future_to_idx):
+                proc_results[future_to_idx[future]] = future.result()
+
+        for candidate, decision, audit in proc_results:
             coverage_gaps.append(
                 CoverageGapDTO(
                     gap_id=candidate.get("gap_id"),

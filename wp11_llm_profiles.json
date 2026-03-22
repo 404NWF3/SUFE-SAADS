@@ -1,56 +1,44 @@
 {
   "profiles": [
+    
     {
-      "profile_id": "101",
+      "profile_id": "401",
       "profile": "cheap_fast",
       "provider": "openai_compatible",
-      "model_env": "OPENAI_FAST_MODEL",
-      "base_url_env": "OPENAI_API_BASE",
-      "api_key_env": "OPENAI_API_KEY",
+      "model_env": "MINIMAX_CHEAP_FAST_MODEL",
+      "base_url_env": "MINIMAX_BASE_URL",
+      "api_key_env": "MINIMAX_API_KEY",
       "enabled": true,
       "supports_structured_output": true,
       "cost_tier": "cheap",
-      "max_concurrency": 1,
+      "max_concurrency": 16,
       "cooldown_seconds": 20
     },
     {
-      "profile_id": "102",
-      "profile": "cheap_fast",
-      "provider": "openai_compatible",
-      "model_env": "OPENAI_MODEL",
-      "base_url_env": "OPENAI_API_BASE",
-      "api_key_env": "OPENAI_API_KEY",
-      "enabled": true,
-      "supports_structured_output": true,
-      "cost_tier": "cheap",
-      "max_concurrency": 1,
-      "cooldown_seconds": 20
-    },
-    {
-      "profile_id": "201",
+      "profile_id": "402",
       "profile": "balanced",
       "provider": "openai_compatible",
-      "model_env": "OPENAI_MODEL",
-      "base_url_env": "OPENAI_API_BASE",
-      "api_key_env": "OPENAI_API_KEY",
+      "model_env": "MINIMAX_MODEL",
+      "base_url_env": "MINIMAX_BASE_URL",
+      "api_key_env": "MINIMAX_API_KEY",
       "enabled": true,
       "supports_structured_output": true,
       "cost_tier": "standard",
-      "max_concurrency": 1,
-      "cooldown_seconds": 30
+      "max_concurrency": 16,
+      "cooldown_seconds": 20
     },
     {
-      "profile_id": "301",
+      "profile_id": "403",
       "profile": "fallback",
       "provider": "openai_compatible",
-      "model_env": "OPENAI_MODEL",
-      "base_url_env": "OPENAI_API_BASE",
-      "api_key_env": "OPENAI_API_KEY",
+      "model_env": "MINIMAX_FAST_MODEL",
+      "base_url_env": "MINIMAX_BASE_URL",
+      "api_key_env": "MINIMAX_API_KEY",
       "enabled": true,
       "supports_structured_output": true,
       "cost_tier": "fallback",
-      "max_concurrency": 1,
-      "cooldown_seconds": 45
+      "max_concurrency": 16,
+      "cooldown_seconds": 20
     }
   ]
 }

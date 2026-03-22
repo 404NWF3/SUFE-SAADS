@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -46,9 +47,11 @@ class BomMapperAgent:
         llm_temperature: float = 0.0,
         validate_online: bool = False,
         llm_runtime_config: dict[str, Any] | None = None,
+        max_concurrency: int = 4,
     ) -> None:
         self.resolution_service = resolution_service or ComponentResolutionService()
         self.strategy = strategy
+        self.max_concurrency = max(1, max_concurrency)
         self.llm_runtime_config = llm_runtime_config or {}
         self.llm_model = resolve_default_model(
             llm_model,
@@ -84,15 +87,27 @@ class BomMapperAgent:
         all_audits: list[dict[str, Any]] = []
         queue_count = 0
 
-        for item in items:
+        if not items:
+            return resolved_items, all_audits
+
+        def _process_item(
+            item: dict[str, Any],
+        ) -> tuple[dict[str, Any], int, list[dict[str, Any]]]:
             if self.strategy in ("llm_required", "llm_optional"):
-                resolved, item_queue, audits = self._llm_primary_resolve_item(
-                    item, trace_id=trace_id
-                )
-            else:
-                resolved, item_queue, audits = self._rules_only_resolve_item(
-                    item, trace_id=trace_id
-                )
+                return self._llm_primary_resolve_item(item, trace_id=trace_id)
+            return self._rules_only_resolve_item(item, trace_id=trace_id)
+
+        max_workers = min(self.max_concurrency, max(1, len(items)))
+        results: list[Any] = [None] * len(items)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {
+                executor.submit(_process_item, item): i
+                for i, item in enumerate(items)
+            }
+            for future in as_completed(future_to_idx):
+                results[future_to_idx[future]] = future.result()
+
+        for resolved, item_queue, audits in results:
             resolved_items.append(resolved)
             queue_count += item_queue
             all_audits.extend(audits)

@@ -44,6 +44,9 @@ class SourceCollectionCrew:
         prefer_db_source_registry: bool = False,
         collector_role_filter: str | None = None,
         collection_coordination: dict[str, Any] | None = None,
+        llm_model: str | None = None,
+        llm_temperature: float = 0.0,
+        llm_runtime_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if force_no_results:
             return {
@@ -65,6 +68,9 @@ class SourceCollectionCrew:
             trace_id=trace_id,
             planning_audits=(collection_coordination or {}).get("planning_audits"),
             reflection_audits=(collection_coordination or {}).get("reflection_audits"),
+            llm_model=llm_model,
+            llm_temperature=llm_temperature,
+            llm_runtime_config=llm_runtime_config,
         )
         if collector_role_filter:
             source_plans = [

@@ -659,6 +659,37 @@ def _validate_llm_pool_failover_and_wait(failures: list[str]) -> None:
         )
 
         llm_factory._PROFILE_ACTIVE_COUNT.clear()
+        fail_once_builder = _make_fail_first_builder()
+        llm_factory.build_structured_chat_openai = fail_once_builder
+        result, meta = invoke_structured_with_model_pool(
+            task_name="bom_resolution",
+            prompt=_FakePrompt(),
+            schema=_FakeStructuredResult,
+            payload={"message": "validator"},
+            default_model=os.getenv("OPENAI_MODEL"),
+            temperature=0.0,
+            base_url=os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL"),
+            api_key=os.getenv("OPENAI_API_KEY"),
+            runtime_config=runtime_config,
+        )
+        failed_profile_errors = list(meta.get("failed_profile_errors", []) or [])
+        _check(
+            meta.get("profile_id") == cheap_profiles[1].profile_id
+            and result.get("value") == cheap_profiles[1].model,
+            "llm pool retries the next cheap_fast profile after a real invocation failure",
+            f"unexpected invocation-failover result: meta={meta}, result={result}",
+            failures,
+        )
+        _check(
+            len(failed_profile_errors) == 1
+            and failed_profile_errors[0].get("profile_id") == cheap_profiles[0].profile_id
+            and failed_profile_errors[0].get("error_family") == "fatal",
+            "successful failover preserves the failed profile id in llm meta",
+            f"unexpected failed_profile_errors payload: {failed_profile_errors}",
+            failures,
+        )
+
+        llm_factory._PROFILE_ACTIVE_COUNT.clear()
         for profile in cheap_profiles:
             llm_factory._PROFILE_ACTIVE_COUNT[profile.profile_id] = profile.max_concurrency
         exhausted = None
@@ -918,8 +949,16 @@ class _FakeStructuredResult(BaseModel):
 
 
 class _FakeStructuredTarget:
-    def __init__(self, model: str) -> None:
+    def __init__(
+        self,
+        model: str,
+        *,
+        should_fail: bool = False,
+        failure_message: str = "synthetic failure",
+    ) -> None:
         self.model = model
+        self.should_fail = should_fail
+        self.failure_message = failure_message
 
 
 class _FakeChain:
@@ -927,6 +966,8 @@ class _FakeChain:
         self._target = target
 
     def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if self._target.should_fail:
+            raise RuntimeError(self._target.failure_message)
         return {"value": self._target.model}
 
 
@@ -936,15 +977,27 @@ class _FakePrompt:
 
 
 class _FakeStructuredLlm:
-    def __init__(self, model: str) -> None:
+    def __init__(
+        self,
+        model: str,
+        *,
+        should_fail: bool = False,
+        failure_message: str = "synthetic failure",
+    ) -> None:
         self._model = model
+        self._should_fail = should_fail
+        self._failure_message = failure_message
 
     def with_structured_output(
         self,
         schema: type[Any],
         method: str = "function_calling",
     ) -> _FakeStructuredTarget:
-        return _FakeStructuredTarget(self._model)
+        return _FakeStructuredTarget(
+            self._model,
+            should_fail=self._should_fail,
+            failure_message=self._failure_message,
+        )
 
 
 def _fake_build_structured_chat_openai(
@@ -955,3 +1008,23 @@ def _fake_build_structured_chat_openai(
     api_key: str | None,
 ) -> _FakeStructuredLlm:
     return _FakeStructuredLlm(model)
+
+
+def _make_fail_first_builder() -> Callable[..., _FakeStructuredLlm]:
+    state = {"count": 0}
+
+    def _builder(
+        *,
+        model: str,
+        temperature: float,
+        base_url: str | None,
+        api_key: str | None,
+    ) -> _FakeStructuredLlm:
+        state["count"] += 1
+        return _FakeStructuredLlm(
+            model,
+            should_fail=state["count"] == 1,
+            failure_message="synthetic first-profile failure",
+        )
+
+    return _builder

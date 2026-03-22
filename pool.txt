@@ -1,0 +1,40 @@
+[INFO] starting wp11 llm pool validation suite
+[OK] llm profiles loaded from root json file
+[OK] llm route presets loaded from root json file
+[OK] llm profile catalog is not empty
+[OK] profile_id 101 is numeric
+[OK] profile label valid for 101
+[OK] profile_id 102 is numeric
+[OK] profile label valid for 102
+[OK] profile_id 103 is numeric
+[OK] profile label valid for 103
+[OK] profile_id 104 is numeric
+[OK] profile label valid for 104
+[OK] profile_id 105 is numeric
+[OK] profile label valid for 105
+[OK] profile_id 106 is numeric
+[OK] profile label valid for 106
+[OK] profile_id 107 is numeric
+[OK] profile label valid for 107
+[OK] profile_id 108 is numeric
+[OK] profile label valid for 108
+[OK] profile_id 109 is numeric
+[OK] profile label valid for 109
+[OK] profile_id 110 is numeric
+[OK] profile label valid for 110
+[OK] profile_id 201 is numeric
+[OK] profile label valid for 201
+[OK] profile_id 301 is numeric
+[OK] profile label valid for 301
+[OK] profile_id 401 is numeric
+[OK] profile label valid for 401
+[OK] route presets only reference profile labels
+[OK] cheap_fast label expands to multiple concrete profiles
+[OK] task route override uses profile labels
+[OK] cheap_fast profiles expand in numeric profile_id order
+[OK] task concurrency budget sums expanded cheap_fast profiles
+[OK] llm pool fails over to the next cheap_fast profile when the first is full
+[OK] llm invocation meta records profile label routing
+[OK] fake llm invocation returned the second cheap_fast model
+[OK] llm pool waits then reports pool_exhausted when all cheap_fast profiles are full
+[OK] wp11 llm pool validation passed

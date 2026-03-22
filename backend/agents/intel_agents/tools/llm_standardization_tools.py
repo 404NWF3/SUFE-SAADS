@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -21,7 +22,7 @@ PROMPT_VERSION = "v2.0-llm-primary"
 
 
 class _StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
 
 # ---------------------------------------------------------------------------
@@ -35,6 +36,26 @@ class LlmTaxonomyItem(_StrictModel):
     taxonomy_name: str = Field(min_length=1)
     confidence_score: float = Field(ge=0.0, le=1.0)
     is_primary: bool = False
+
+    @field_validator("taxonomy_type", mode="before")
+    @classmethod
+    def _normalize_taxonomy_type(cls, v: Any) -> Any:
+        if not isinstance(v, str):
+            return v
+        _MAP = {
+            "MITRE_ATTACK": "ATTACK",
+            "MITRE ATT&CK": "ATTACK",
+            "ATT&CK": "ATTACK",
+            "MITRE": "ATTACK",
+            "CVE": "CWE",
+            "NVD": "CWE",
+            "OWASP-LLM": "OWASP_LLM",
+            "OWASP LLM": "OWASP_LLM",
+            "owasp_llm": "OWASP_LLM",
+        }
+        normalized = _MAP.get(v.strip(), v.strip())
+        _VALID = {"OWASP_LLM", "CWE", "CAPEC", "ATTACK"}
+        return normalized if normalized in _VALID else "CWE"
 
 
 class LlmBomMention(_StrictModel):
@@ -59,6 +80,31 @@ class LlmBomMention(_StrictModel):
     ] = "unknown"
     confidence_score: float = Field(ge=0.0, le=1.0)
     reason_code: str = Field(default="llm_inferred")
+
+    @field_validator("component_layer", mode="before")
+    @classmethod
+    def _normalize_component_layer(cls, v: Any) -> Any:
+        if not isinstance(v, str):
+            return "unknown"
+        _MAP = {
+            "platform":    "vendor_platform",
+            "vendor":      "vendor_platform",
+            "application": "vendor_platform",
+            "service":     "vendor_platform",
+            "model":       "model_family",
+            "library":     "framework",
+            "sdk":         "framework",
+            "tool":        "plugin",
+            "extension":   "plugin",
+            "agent":       "plugin",
+            "utility":     "unknown",
+            "protocol":    "unknown",
+            "api":         "unknown",
+        }
+        _VALID = {"vendor_platform", "model_family", "framework", "plugin",
+                  "runtime", "vector_stack", "unknown"}
+        normalized = _MAP.get(v.strip().lower(), v.strip().lower())
+        return normalized if normalized in _VALID else "unknown"
 
 
 class LlmCvssHint(_StrictModel):
@@ -107,6 +153,40 @@ class LlmStandardizationResult(_StrictModel):
     evidence_spans: list[LlmEvidenceSpan] = Field(default_factory=list)
     field_confidences: list[LlmPerFieldConfidence] = Field(default_factory=list)
     overall_confidence: float = Field(ge=0.0, le=1.0)
+
+    @field_validator("severity_level", mode="before")
+    @classmethod
+    def _normalize_severity_level(cls, v: Any) -> Any:
+        if not isinstance(v, str):
+            return "medium"
+        _MAP = {
+            "unknown":       "medium",
+            "moderate":      "medium",
+            "severe":        "high",
+            "critical":      "critical",
+            "high":          "high",
+            "medium":        "medium",
+            "low":           "low",
+            "info":          "info",
+            "informational": "info",
+            "none":          "info",
+            "warn":          "low",
+            "warning":       "low",
+        }
+        return _MAP.get(v.strip().lower(), "medium")
+
+    @field_validator("evidence_spans", mode="before")
+    @classmethod
+    def _coerce_evidence_spans(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except (ValueError, TypeError):
+                pass
+            return []
+        return v
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -63,10 +64,12 @@ class DedupMergeAgent:
         validate_online: bool = False,
         merge_judge: Any | None = None,
         llm_runtime_config: dict[str, Any] | None = None,
+        max_concurrency: int = 4,
     ):
         self.vector_memory = vector_memory
         self.adjudicator = adjudicator
         self.strategy = strategy
+        self.max_concurrency = max(1, max_concurrency)
         self.llm_runtime_config = llm_runtime_config or {}
         self.llm_model = resolve_default_model(
             llm_model,
@@ -109,10 +112,40 @@ class DedupMergeAgent:
         resolved_items: list[dict[str, Any]] = []
         llm_dedup_judgments: list[dict[str, Any]] = []
 
-        for candidate in records:
-            recalled = self._semantic_recall(candidate, stable_records)
+        if not records:
+            dedup_merged_count = 0
+            new_attack_count = 0
+            return {
+                "dedup_decisions": decisions,
+                "stable_attack_records": stable_records,
+                "merge_audits": audits,
+                "resolved_items": resolved_items,
+                "dedup_merged_count": dedup_merged_count,
+                "new_attack_count": new_attack_count,
+            }, llm_dedup_judgments
+
+        # ---------------------------------------------------------------
+        # Phase 1 (parallel): evaluate each candidate against the initial
+        # stable_records snapshot.  LLM judge calls are the bottleneck and
+        # are independent per candidate, so we run them concurrently.
+        # Note: all candidates are scored against the *pre-batch* snapshot;
+        # within-batch incremental merges do not feed back into this pass.
+        # ---------------------------------------------------------------
+        stable_snapshot = list(stable_records)
+
+        def _evaluate(
+            candidate: dict[str, Any],
+        ) -> tuple[
+            list[dict[str, Any]],
+            dict[str, Any] | None,
+            dict[str, Any] | None,
+            dict[str, Any] | None,
+            str,
+            list[str],
+        ]:
+            recalled = self._semantic_recall(candidate, stable_snapshot)
             candidate_pool = self._build_candidate_pool(
-                candidate, stable_records, recalled
+                candidate, stable_snapshot, recalled
             )
             ranked = sorted(
                 [self._score_candidate(candidate, stable) for stable in candidate_pool],
@@ -120,32 +153,41 @@ class DedupMergeAgent:
                 reverse=True,
             )
             best = ranked[0] if ranked else None
-
-            # --- Rule prior ---
             rule_prior_decision, rule_prior_reasons = self._compute_rule_prior(
                 candidate, best
             )
-
-            # --- LLM merge judge (if strategy permits) ---
             llm_judgment: dict[str, Any] | None = None
             llm_audit: dict[str, Any] | None = None
             if self._should_use_llm() and best is not None:
                 llm_judgment, llm_audit = self._invoke_merge_judge(
-                    candidate,
-                    best,
-                    rule_prior_decision,
-                    rule_prior_reasons,
+                    candidate, best, rule_prior_decision, rule_prior_reasons
                 )
-                if llm_audit is not None:
-                    llm_dedup_judgments.append(llm_audit)
-
-            # --- Fusion: reconcile rule prior + LLM verdict ---
             fused_decision, fused_reasons = self._fuse_decisions(
-                rule_prior_decision,
-                rule_prior_reasons,
-                llm_judgment,
-                best,
+                rule_prior_decision, rule_prior_reasons, llm_judgment, best
             )
+            return recalled, best, llm_judgment, llm_audit, fused_decision, fused_reasons
+
+        max_workers = min(self.max_concurrency, max(1, len(records)))
+        eval_results: list[Any] = [None] * len(records)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {
+                executor.submit(_evaluate, candidate): i
+                for i, candidate in enumerate(records)
+            }
+            for future in as_completed(future_to_idx):
+                eval_results[future_to_idx[future]] = future.result()
+
+        # ---------------------------------------------------------------
+        # Phase 2 (serial): apply fused decisions in order so that
+        # stable_records mutations are deterministic.
+        # ---------------------------------------------------------------
+        for i, candidate in enumerate(records):
+            recalled, best, llm_judgment, llm_audit, fused_decision, fused_reasons = (
+                eval_results[i]
+            )
+
+            if llm_audit is not None:
+                llm_dedup_judgments.append(llm_audit)
 
             # --- Apply decision ---
             decision, stable_record, audit = self._apply_fused_decision(

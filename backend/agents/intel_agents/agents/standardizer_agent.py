@@ -143,14 +143,33 @@ class StandardizerAgent:
             )
 
             # ---- Decide execution path ----
-            projection, audit = self._execute_strategy(
-                item=item.model_dump(mode="python"),
-                raw_id=raw_id,
-                analysis_text=analysis_text,
-                text_fields=text_fields,
-                cleaned_payload=cleaned_payload,
-                source_projection=source_projection,
-            )
+            try:
+                projection, audit = self._execute_strategy(
+                    item=item.model_dump(mode="python"),
+                    raw_id=raw_id,
+                    analysis_text=analysis_text,
+                    text_fields=text_fields,
+                    cleaned_payload=cleaned_payload,
+                    source_projection=source_projection,
+                )
+            except Exception as exc:
+                # All LLM profiles exhausted or unrecoverable error → degrade
+                # this item to rules-only rather than dropping it entirely.
+                projection, audit = self._rules_only_path(
+                    item=item.model_dump(mode="python"),
+                    raw_id=raw_id,
+                    analysis_text=analysis_text,
+                    text_fields=text_fields,
+                    source_projection=source_projection,
+                )
+                audit = {
+                    **audit,
+                    "strategy_executed": "rules_only_degraded",
+                    "fallback_reason": (
+                        f"LLM all profiles exhausted: "
+                        f"{exc.__class__.__name__}: {str(exc)[:200]}"
+                    ),
+                }
 
             # ---- Build downstream artefacts ----
             cve_refs = extract_cve_references(analysis_text)

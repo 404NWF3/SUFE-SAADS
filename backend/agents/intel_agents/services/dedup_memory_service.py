@@ -160,16 +160,6 @@ class DedupMemoryService:
             summary["attempted_count"] += 1
             try:
                 normalized, normalization_notes = _normalize_record_for_persist(record)
-                raw_id = _select_existing_raw_id(
-                    raw_ids=normalized.get("related_raw_ids", []) or [],
-                    trace_id=trace_id,
-                )
-                attack = self._persist_attack_entry(
-                    attack_code=attack_code,
-                    record=normalized,
-                    trace_id=trace_id,
-                )
-                attack_id = str(attack.attack_id)
                 item_result = {
                     "attack_code": attack_code,
                     "status": "persisted",
@@ -182,43 +172,62 @@ class DedupMemoryService:
                         "cvss": "skipped_empty",
                     },
                 }
+                # Single UoW per record: reduces 5 separate DB connections to 1.
+                with UnitOfWork(
+                    context=SqlContext(
+                        trace_id=trace_id,
+                        agent_name="dedup_memory_persist",
+                    )
+                ) as uow:
+                    attack = self._persist_attack_entry(
+                        attack_code=attack_code,
+                        record=normalized,
+                        uow=uow,
+                    )
+                    attack_id = str(attack.attack_id)
+                    _mark_substep(summary, "attack_entry", "ok")
+
+                    raw_id = _select_existing_raw_id_with_uow(
+                        raw_ids=normalized.get("related_raw_ids", []) or [],
+                        uow=uow,
+                    )
+
+                    evidence_status = self._persist_attack_evidence(
+                        attack_id=attack_id,
+                        raw_id=raw_id,
+                        evidence_snippet=normalized.get("summary"),
+                        uow=uow,
+                    )
+                    item_result["substeps"]["evidence"] = evidence_status
+                    _mark_substep(summary, "evidence", evidence_status)
+
+                    taxonomy_status = self._persist_taxonomy_items(
+                        attack_id=attack_id,
+                        taxonomy_items=normalized.get("taxonomy_items", []),
+                        uow=uow,
+                    )
+                    item_result["substeps"]["taxonomy"] = taxonomy_status
+                    _mark_substep(summary, "taxonomy", taxonomy_status)
+
+                    component_status = self._persist_component_impacts(
+                        attack_id=attack_id,
+                        bom_mentions=normalized.get("bom_mentions", []),
+                        evidence_refs=normalized.get("evidence_refs", []) or [],
+                        uow=uow,
+                    )
+                    item_result["substeps"]["component_impacts"] = component_status
+                    _mark_substep(summary, "component_impacts", component_status)
+
+                    cvss_status = self._persist_cvss_hint(
+                        attack_id=attack_id,
+                        cvss_hint=normalized.get("cvss_hint"),
+                        raw_id=raw_id,
+                        uow=uow,
+                    )
+                    item_result["substeps"]["cvss"] = cvss_status
+                    _mark_substep(summary, "cvss", cvss_status)
+
                 summary["persisted_count"] += 1
-                _mark_substep(summary, "attack_entry", "ok")
-
-                evidence_status = self._persist_attack_evidence(
-                    attack_id=attack_id,
-                    raw_id=raw_id,
-                    evidence_snippet=normalized.get("summary"),
-                    trace_id=trace_id,
-                )
-                item_result["substeps"]["evidence"] = evidence_status
-                _mark_substep(summary, "evidence", evidence_status)
-
-                taxonomy_status = self._persist_taxonomy_items(
-                    attack_id=attack_id,
-                    taxonomy_items=normalized.get("taxonomy_items", []),
-                    trace_id=trace_id,
-                )
-                item_result["substeps"]["taxonomy"] = taxonomy_status
-                _mark_substep(summary, "taxonomy", taxonomy_status)
-
-                component_status = self._persist_component_impacts(
-                    attack_id=attack_id,
-                    bom_mentions=normalized.get("bom_mentions", []),
-                    evidence_refs=normalized.get("evidence_refs", []) or [],
-                    trace_id=trace_id,
-                )
-                item_result["substeps"]["component_impacts"] = component_status
-                _mark_substep(summary, "component_impacts", component_status)
-
-                cvss_status = self._persist_cvss_hint(
-                    attack_id=attack_id,
-                    cvss_hint=normalized.get("cvss_hint"),
-                    raw_id=raw_id,
-                    trace_id=trace_id,
-                )
-                item_result["substeps"]["cvss"] = cvss_status
-                _mark_substep(summary, "cvss", cvss_status)
 
                 if any(
                     status.endswith("_failed")
@@ -281,6 +290,9 @@ class DedupMemoryService:
         summary = _new_audit_summary()
         if not audits:
             return summary
+
+        # Validate raw_ids before opening any DB connection.
+        valid_entries: list[tuple[str, dict[str, Any]]] = []
         for audit in audits:
             summary["attempted_count"] += 1
             candidate_raw_id = _parse_uuid_or_none(audit.get("candidate_raw_id"))
@@ -291,13 +303,21 @@ class DedupMemoryService:
                 )
                 summary["invalid_candidate_count"] += 1
                 continue
-            try:
-                with UnitOfWork(
-                    context=SqlContext(
-                        trace_id=trace_id,
-                        agent_name="dedup_memory_audit",
-                    )
-                ) as uow:
+            valid_entries.append((candidate_raw_id, audit))
+
+        if not valid_entries:
+            summary["failure_reasons"] = summary["failure_reasons"][:20]
+            return summary
+
+        # Single UoW for all audit inserts: reduces N DB connections to 1.
+        try:
+            with UnitOfWork(
+                context=SqlContext(
+                    trace_id=trace_id,
+                    agent_name="dedup_memory_audit",
+                )
+            ) as uow:
+                for candidate_raw_id, audit in valid_entries:
                     if uow.sources.get_raw_record_by_id(candidate_raw_id) is None:
                         logger.warning(
                             "dedup_memory_audit skipped missing candidate_raw_id=%s",
@@ -317,21 +337,13 @@ class DedupMemoryService:
                         decision=audit.get("decision", "review"),
                         reviewer_name=None,
                     )
-                summary["persisted_count"] += 1
-            except Exception as exc:
-                logger.warning(
-                    "dedup_memory_audit skipped candidate_raw_id=%s: %s",
-                    candidate_raw_id,
-                    exc,
-                )
-                summary["failed_count"] += 1
-                summary["failure_reasons"].append(
-                    {
-                        "candidate_raw_id": candidate_raw_id,
-                        "message": str(exc),
-                    }
-                )
-                continue
+                    summary["persisted_count"] += 1
+        except Exception as exc:
+            logger.warning("dedup_memory_audit batch failed: %s", exc)
+            unwritten = len(valid_entries) - summary["persisted_count"]
+            summary["failed_count"] += unwritten
+            summary["failure_reasons"].append({"message": str(exc)})
+
         summary["failure_reasons"] = summary["failure_reasons"][:20]
         return summary
 
@@ -340,30 +352,24 @@ class DedupMemoryService:
         *,
         attack_code: str,
         record: dict[str, Any],
-        trace_id: str | None,
+        uow: Any,
     ):
-        with UnitOfWork(
-            context=SqlContext(
-                trace_id=trace_id,
-                agent_name="dedup_memory_persist_attack",
-            )
-        ) as uow:
-            return uow.attacks.upsert_attack_entry_by_code(
-                attack_code=attack_code,
-                canonical_name=record["canonical_name"],
-                attack_family=record["attack_family"],
-                severity_level=record["severity_level"],
-                entry_status="active",
-                summary=record["summary"],
-                description=record["description"],
-                exploit_preconditions=None,
-                impact_scope=None,
-                confidence_score=float(record.get("confidence_score", 0.0)),
-                first_seen_at=None,
-                last_seen_at=None,
-                stix_type=None,
-                stix_payload=None,
-            )
+        return uow.attacks.upsert_attack_entry_by_code(
+            attack_code=attack_code,
+            canonical_name=record["canonical_name"],
+            attack_family=record["attack_family"],
+            severity_level=record["severity_level"],
+            entry_status="active",
+            summary=record["summary"],
+            description=record["description"],
+            exploit_preconditions=None,
+            impact_scope=None,
+            confidence_score=float(record.get("confidence_score", 0.0)),
+            first_seen_at=None,
+            last_seen_at=None,
+            stix_type=None,
+            stix_payload=None,
+        )
 
     def _persist_attack_evidence(
         self,
@@ -371,24 +377,18 @@ class DedupMemoryService:
         attack_id: str,
         raw_id: str | None,
         evidence_snippet: Any,
-        trace_id: str | None,
+        uow: Any,
     ) -> str:
         if raw_id is None:
             return "skipped_no_valid_raw"
         try:
-            with UnitOfWork(
-                context=SqlContext(
-                    trace_id=trace_id,
-                    agent_name="dedup_memory_persist_evidence",
-                )
-            ) as uow:
-                uow.attacks.insert_attack_evidence(
-                    attack_id=attack_id,
-                    raw_id=raw_id,
-                    evidence_role="supporting",
-                    extractor_name="dedup_memory_service",
-                    evidence_snippet=str(evidence_snippet or "")[:1000] or None,
-                )
+            uow.attacks.insert_attack_evidence(
+                attack_id=attack_id,
+                raw_id=raw_id,
+                evidence_role="supporting",
+                extractor_name="dedup_memory_service",
+                evidence_snippet=str(evidence_snippet or "")[:1000] or None,
+            )
             return "ok"
         except Exception as exc:
             logger.warning(
@@ -404,22 +404,16 @@ class DedupMemoryService:
         *,
         attack_id: str,
         taxonomy_items: list[dict[str, Any]],
-        trace_id: str | None,
+        uow: Any,
     ) -> str:
         normalized_taxonomy, _ = _normalize_taxonomy_items(taxonomy_items)
         if not normalized_taxonomy:
             return "skipped_empty"
         try:
-            with UnitOfWork(
-                context=SqlContext(
-                    trace_id=trace_id,
-                    agent_name="dedup_memory_persist_taxonomy",
-                )
-            ) as uow:
-                TaxonomyService(uow).replace_taxonomy_set(
-                    attack_id=attack_id,
-                    taxonomy_items=normalized_taxonomy,
-                )
+            TaxonomyService(uow).replace_taxonomy_set(
+                attack_id=attack_id,
+                taxonomy_items=normalized_taxonomy,
+            )
             return "ok"
         except Exception as exc:
             logger.warning(
@@ -435,46 +429,34 @@ class DedupMemoryService:
         attack_id: str,
         bom_mentions: list[dict[str, Any]],
         evidence_refs: list[Any],
-        trace_id: str | None,
+        uow: Any,
     ) -> str:
         normalized_mentions = _normalize_bom_mentions(bom_mentions)
         if not normalized_mentions:
             return "skipped_empty"
         evidence_uri = next(
-            (
-                str(ref).strip()
-                for ref in evidence_refs
-                if str(ref).strip()
-            ),
+            (str(ref).strip() for ref in evidence_refs if str(ref).strip()),
             None,
         )
         try:
             wrote_any = False
-            with UnitOfWork(
-                context=SqlContext(
-                    trace_id=trace_id,
-                    agent_name="dedup_memory_persist_components",
+            for bom in normalized_mentions:
+                bom_resolution = uow.components.find_component_by_alias(
+                    str(bom["mentioned_name"]).lower().replace(" ", "")
+                ) or uow.components.get_component_by_name(str(bom["mentioned_name"]))
+                if bom_resolution is None:
+                    continue
+                wrote_any = True
+                uow.components.upsert_attack_component_impact(
+                    attack_id=attack_id,
+                    component_id=str(bom_resolution.component_id),
+                    version_constraint_raw=bom.get("mentioned_version"),
+                    normalized_constraint=bom.get("mentioned_version"),
+                    match_mode="dedup_memory_sync",
+                    impact_scope="direct",
+                    confidence_score=float(bom.get("confidence_score", 0.7)),
+                    evidence_uri=evidence_uri,
                 )
-            ) as uow:
-                for bom in normalized_mentions:
-                    bom_resolution = uow.components.find_component_by_alias(
-                        str(bom["mentioned_name"]).lower().replace(" ", "")
-                    ) or uow.components.get_component_by_name(
-                        str(bom["mentioned_name"])
-                    )
-                    if bom_resolution is None:
-                        continue
-                    wrote_any = True
-                    uow.components.upsert_attack_component_impact(
-                        attack_id=attack_id,
-                        component_id=str(bom_resolution.component_id),
-                        version_constraint_raw=bom.get("mentioned_version"),
-                        normalized_constraint=bom.get("mentioned_version"),
-                        match_mode="dedup_memory_sync",
-                        impact_scope="direct",
-                        confidence_score=float(bom.get("confidence_score", 0.7)),
-                        evidence_uri=evidence_uri,
-                    )
             return "ok" if wrote_any else "skipped_no_component_match"
         except Exception as exc:
             logger.warning(
@@ -490,34 +472,28 @@ class DedupMemoryService:
         attack_id: str,
         cvss_hint: dict[str, Any] | None,
         raw_id: str | None,
-        trace_id: str | None,
+        uow: Any,
     ) -> str:
         normalized_cvss = _normalize_cvss_hint(cvss_hint)
         if normalized_cvss is None:
             return "skipped_empty"
         try:
-            with UnitOfWork(
-                context=SqlContext(
-                    trace_id=trace_id,
-                    agent_name="dedup_memory_persist_cvss",
-                )
-            ) as uow:
-                CvssService(uow).add_cvss_assessment(
-                    attack_id=attack_id,
-                    source_raw_id=raw_id,
-                    cvss_version=normalized_cvss["cvss_version"],
-                    vector_string=normalized_cvss.get("vector_string"),
-                    base_score=float(normalized_cvss["base_score"]),
-                    temporal_score=None,
-                    environmental_score=None,
-                    severity_label=normalized_cvss["severity_label"],
-                    exploitability_subscore=None,
-                    impact_subscore=None,
-                    score_origin=normalized_cvss["score_origin"],
-                    score_provider="dedup_memory_service",
-                    confidence_score=0.8,
-                    is_primary=True,
-                )
+            CvssService(uow).add_cvss_assessment(
+                attack_id=attack_id,
+                source_raw_id=raw_id,
+                cvss_version=normalized_cvss["cvss_version"],
+                vector_string=normalized_cvss.get("vector_string"),
+                base_score=float(normalized_cvss["base_score"]),
+                temporal_score=None,
+                environmental_score=None,
+                severity_label=normalized_cvss["severity_label"],
+                exploitability_subscore=None,
+                impact_subscore=None,
+                score_origin=normalized_cvss["score_origin"],
+                score_provider="dedup_memory_service",
+                confidence_score=0.8,
+                is_primary=True,
+            )
             return "ok"
         except Exception as exc:
             logger.warning(
@@ -602,6 +578,19 @@ def _select_existing_raw_id(*, raw_ids: list[Any], trace_id: str | None) -> str 
         ) as uow:
             if uow.sources.get_raw_record_by_id(normalized) is not None:
                 return normalized
+    return None
+
+
+def _select_existing_raw_id_with_uow(
+    *, raw_ids: list[Any], uow: Any
+) -> str | None:
+    """Like _select_existing_raw_id but reuses an existing UoW session."""
+    for raw_id in raw_ids:
+        normalized = _parse_uuid_or_none(raw_id)
+        if normalized is None:
+            continue
+        if uow.sources.get_raw_record_by_id(normalized) is not None:
+            return normalized
     return None
 
 

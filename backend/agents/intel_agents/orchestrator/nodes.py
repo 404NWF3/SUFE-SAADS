@@ -4,6 +4,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from langgraph.types import Send
+
 from ..agents.bom_mapper_agent import BomMapperAgent
 from ..agents.bom_resolution_reviewer_agent import BomResolutionReviewerAgent
 from ..agents.coverage_analyst_agent import CoverageAnalystAgent
@@ -168,6 +170,8 @@ def _build_resume_hint(
         "error_family": llm_error.error_family,
         "recommended_tuning_changes": list(llm_error.recommended_tuning_changes),
         "attempted_profiles": list(llm_error.attempted_profiles),
+        "attempted_profile_labels": list(llm_error.attempted_profile_labels),
+        "failed_profile_errors": list(llm_error.failed_profile_errors),
     }
     if llm_error.retry_after_seconds > 0:
         hint["retry_after_seconds"] = llm_error.retry_after_seconds
@@ -322,6 +326,7 @@ def supervisor_plan_node(state: dict[str, Any]) -> dict[str, Any]:
 
 def dispatch_collection_node(state: dict[str, Any]) -> dict[str, Any]:
     def worker(current_state: dict[str, Any]) -> dict[str, Any]:
+        context = _runtime_context(current_state)
         plan = CollectionPlanDTO.model_validate(
             current_state.get("collection_plan") or {}
         )
@@ -331,6 +336,9 @@ def dispatch_collection_node(state: dict[str, Any]) -> dict[str, Any]:
             trace_id=current_state["trace_id"],
             planning_audits=current_state.get("llm_planning_audits", []),
             reflection_audits=current_state.get("llm_reflection_audits", []),
+            llm_model=context.llm_model,
+            llm_temperature=context.llm_temperature,
+            llm_runtime_config=context.model_dump(mode="python"),
         )
         coordination = {
             **coordination,
@@ -369,6 +377,39 @@ def dispatch_collection_node(state: dict[str, Any]) -> dict[str, Any]:
         }
 
     return _execute_with_retries(state, "dispatch_collection", worker, max_attempts=1)
+
+
+# ---------------------------------------------------------------------------
+# Send API fan-out router for the 5 collection nodes
+# ---------------------------------------------------------------------------
+
+_COLLECTOR_ROLE_TO_NODE: dict[str, str] = {
+    "StructuredIntelCollector": "collect_structured_sources",
+    "CodeSecurityCollector": "collect_code_sources",
+    "PaperIntelCollector": "collect_paper_sources",
+    "CommunitySignalCollector": "collect_community_sources",
+    "AdvisoryCollector": "collect_advisory_sources",
+}
+
+
+def route_collectors_fan_out(state: dict[str, Any]) -> list[Send]:
+    """Send API router: spawn one Send per collector role that has assigned plans.
+
+    Only roles with non-empty collector_plans entries are spawned, avoiding
+    no-op node invocations for roles with no source assignments.  If all
+    roles are empty (degraded / bootstrap edge case), all 5 nodes are sent
+    so the graph never stalls at the fan-in.
+    """
+    collector_plans: dict[str, list] = state.get("collector_plans") or {}
+    full_state = dict(state)
+    sends = [
+        Send(node_name, full_state)
+        for role, node_name in _COLLECTOR_ROLE_TO_NODE.items()
+        if collector_plans.get(role)
+    ]
+    if not sends:
+        sends = [Send(node_name, full_state) for node_name in _COLLECTOR_ROLE_TO_NODE.values()]
+    return sends
 
 
 def _collector_node(
@@ -413,6 +454,9 @@ def _collector_node(
             prefer_db_source_registry=context.prefer_db_source_registry,
             collector_role_filter=collector_role,
             collection_coordination=current_state.get("collection_coordination"),
+            llm_model=context.llm_model,
+            llm_temperature=context.llm_temperature,
+            llm_runtime_config=context.model_dump(mode="python"),
         )
         return {
             "raw_items": [

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from langgraph.graph import END, StateGraph
+from langgraph.types import Send  # noqa: F401 — imported for Send API fan-out
 
 from .nodes import (
     assess_collection_yield_node,
@@ -19,6 +20,7 @@ from .nodes import (
     refresh_coverage_view_node,
     review_ai_bom_resolution_node,
     resolve_ai_bom_node,
+    route_collectors_fan_out,
     score_confidence_and_novelty_node,
     semantic_dedup_and_merge_node,
     store_raw_records_node,
@@ -87,11 +89,20 @@ def build_phase1_graph(*, checkpointer=None):
     )
     graph.add_edge("supervisor_plan", "dispatch_collection")
 
-    graph.add_edge("dispatch_collection", "collect_structured_sources")
-    graph.add_edge("dispatch_collection", "collect_code_sources")
-    graph.add_edge("dispatch_collection", "collect_paper_sources")
-    graph.add_edge("dispatch_collection", "collect_community_sources")
-    graph.add_edge("dispatch_collection", "collect_advisory_sources")
+    # Send API fan-out: route_collectors_fan_out returns [Send(node, {}), ...]
+    # for each collector role that has assigned source plans, ensuring parallel
+    # execution.  Roles with no plans are skipped at runtime.
+    graph.add_conditional_edges(
+        "dispatch_collection",
+        route_collectors_fan_out,
+        [
+            "collect_structured_sources",
+            "collect_code_sources",
+            "collect_paper_sources",
+            "collect_community_sources",
+            "collect_advisory_sources",
+        ],
+    )
 
     graph.add_edge("collect_structured_sources", "store_raw_records")
     graph.add_edge("collect_code_sources", "store_raw_records")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from dataclasses import dataclass
@@ -30,6 +31,7 @@ _ROOT_DIR = Path(__file__).resolve().parents[4]
 _LLM_PROFILES_FILENAME = "wp11_llm_profiles.json"
 _LLM_ROUTE_PRESETS_FILENAME = "wp11_llm_route_presets.json"
 _VALID_PROFILE_LABELS = ("cheap_fast", "balanced", "fallback")
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -56,12 +58,44 @@ class LlmInvocationError(RuntimeError):
         retry_after_seconds: float = 0.0,
         recommended_tuning_changes: list[str] | None = None,
         attempted_profiles: list[str] | None = None,
+        attempted_profile_labels: list[str] | None = None,
+        failed_profile_errors: list[dict[str, Any]] | None = None,
     ) -> None:
         super().__init__(message)
         self.error_family = error_family
         self.retry_after_seconds = round(max(retry_after_seconds, 0.0), 3)
         self.recommended_tuning_changes = recommended_tuning_changes or []
         self.attempted_profiles = attempted_profiles or []
+        self.attempted_profile_labels = attempted_profile_labels or []
+        self.failed_profile_errors = failed_profile_errors or []
+
+
+def _profile_log_payload(
+    profile: LlmProfile,
+    *,
+    task_name: str,
+    attempt: int | None = None,
+    error_family: str | None = None,
+    error: Exception | str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "task_name": task_name,
+        "profile_id": profile.profile_id,
+        "profile": profile.profile,
+        "provider": profile.provider,
+        "model": profile.model,
+        "base_url": profile.base_url,
+    }
+    if attempt is not None:
+        payload["attempt"] = attempt
+    if error_family is not None:
+        payload["error_family"] = error_family
+    if error is not None:
+        payload["error_type"] = (
+            error.__class__.__name__ if isinstance(error, Exception) else "RuntimeError"
+        )
+        payload["error"] = str(error)[:300]
+    return payload
 
 
 def _read_bool_env(name: str) -> bool | None:
@@ -695,9 +729,23 @@ def invoke_structured_with_model_pool(
     total_wait_seconds = 0.0
     attempted_profiles: list[str] = []
     attempted_profile_labels: list[str] = []
+    failed_profile_errors: list[dict[str, Any]] = []
     suggested_retry_after = 0.0
 
     for profile in profiles:
+        if not profile.api_key and not profile.base_url:
+            failure_payload = _profile_log_payload(
+                profile,
+                task_name=task_name,
+                error_family="config_missing",
+                error="profile has neither api_key nor base_url configured",
+            )
+            failed_profile_errors.append(failure_payload)
+            errors.append(
+                f"{profile.profile_id}/{profile.profile}: missing api_key/base_url configuration"
+            )
+            _LOGGER.error("wp11_llm_profile_invalid_config %s", failure_payload)
+            continue
         if not profile.supports_structured_output:
             errors.append(
                 f"{profile.profile_id}/{profile.profile}: structured output not supported"
@@ -710,6 +758,15 @@ def invoke_structured_with_model_pool(
             errors.append(
                 f"{profile.profile_id}/{profile.profile}: cooling down for {cooldown_remaining:.1f}s"
             )
+            _LOGGER.warning(
+                "wp11_llm_profile_skipped_cooldown %s",
+                _profile_log_payload(
+                    profile,
+                    task_name=task_name,
+                    error_family="cooldown",
+                    error=f"cooling down for {cooldown_remaining:.1f}s",
+                ),
+            )
             continue
         slot_waited_seconds = _acquire_profile_slot_with_wait(
             profile,
@@ -719,6 +776,15 @@ def invoke_structured_with_model_pool(
             suggested_retry_after = max(suggested_retry_after, short_wait_threshold)
             errors.append(
                 f"{profile.profile_id}/{profile.profile}: max_concurrency {profile.max_concurrency} reached"
+            )
+            _LOGGER.warning(
+                "wp11_llm_profile_skipped_capacity %s",
+                _profile_log_payload(
+                    profile,
+                    task_name=task_name,
+                    error_family="capacity",
+                    error=f"max_concurrency {profile.max_concurrency} reached",
+                ),
             )
             continue
         total_wait_seconds += slot_waited_seconds
@@ -757,6 +823,7 @@ def invoke_structured_with_model_pool(
                         "selected_route_labels": route_meta["selected_route_labels"],
                         "attempted_profiles": attempted_profiles,
                         "attempted_profile_labels": attempted_profile_labels,
+                        "failed_profile_errors": failed_profile_errors,
                     }
                 except Exception as exc:
                     error_family = classify_llm_error(exc)
@@ -764,6 +831,15 @@ def invoke_structured_with_model_pool(
                         f"{profile.profile_id}/{profile.profile}:{error_family}:{type(exc).__name__}:"
                         f"{str(exc)[:220]}"
                     )
+                    failure_payload = _profile_log_payload(
+                        profile,
+                        task_name=task_name,
+                        attempt=attempt,
+                        error_family=error_family,
+                        error=exc,
+                    )
+                    failed_profile_errors.append(failure_payload)
+                    _LOGGER.error("wp11_llm_profile_failed %s", failure_payload)
                     if _is_retryable_family(error_family) and attempt < retry_attempts:
                         wait_seconds = min(
                             backoff_max,
@@ -824,4 +900,6 @@ def invoke_structured_with_model_pool(
         retry_after_seconds=retry_after,
         recommended_tuning_changes=recommended_changes,
         attempted_profiles=attempted_profiles,
+        attempted_profile_labels=attempted_profile_labels,
+        failed_profile_errors=failed_profile_errors,
     )

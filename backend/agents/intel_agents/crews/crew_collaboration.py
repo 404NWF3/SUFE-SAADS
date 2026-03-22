@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from collections import defaultdict
 from importlib import import_module
+import logging
+import os
 from typing import Any
+
+from ..tools.llm_client_factory import LlmProfile, resolve_model_pool
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class CrewCollaborationService:
@@ -28,6 +34,9 @@ class CrewCollaborationService:
         trace_id: str,
         planning_audits: list[dict[str, Any]] | None = None,
         reflection_audits: list[dict[str, Any]] | None = None,
+        llm_model: str | None = None,
+        llm_temperature: float = 0.0,
+        llm_runtime_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not source_plans:
             return {
@@ -36,7 +45,16 @@ class CrewCollaborationService:
                 "collector_agents": [],
                 "assignments": [],
                 "summary": "No source plans to coordinate.",
+                "llm_profile_id": None,
+                "llm_profile": None,
+                "llm_model": None,
+                "llm_route_labels": [],
             }
+
+        crewai_profile, route_meta = self._resolve_crewai_profile(
+            llm_model=llm_model,
+            llm_runtime_config=llm_runtime_config,
+        )
 
         if self.crewai_available:
             try:
@@ -46,6 +64,9 @@ class CrewCollaborationService:
                     trace_id=trace_id,
                     planning_audits=planning_audits,
                     reflection_audits=reflection_audits,
+                    crewai_profile=crewai_profile,
+                    route_meta=route_meta,
+                    llm_temperature=llm_temperature,
                 )
             except Exception as exc:
                 return self._fallback_plan(
@@ -53,6 +74,8 @@ class CrewCollaborationService:
                     planning_audits=planning_audits,
                     reflection_audits=reflection_audits,
                     summary=f"CrewAI coordination failed, fallback engaged: {exc}",
+                    crewai_profile=crewai_profile,
+                    route_meta=route_meta,
                 )
 
         return self._fallback_plan(
@@ -60,6 +83,8 @@ class CrewCollaborationService:
             planning_audits=planning_audits,
             reflection_audits=reflection_audits,
             summary="CrewAI not installed; using deterministic coordination fallback.",
+            crewai_profile=crewai_profile,
+            route_meta=route_meta,
         )
 
     def _coordinate_with_crewai(
@@ -70,10 +95,14 @@ class CrewCollaborationService:
         trace_id: str,
         planning_audits: list[dict[str, Any]] | None,
         reflection_audits: list[dict[str, Any]] | None,
+        crewai_profile: LlmProfile | None,
+        route_meta: dict[str, Any],
+        llm_temperature: float,
     ) -> dict[str, Any]:
         crewai_module = import_module("crewai")
         Agent = crewai_module.Agent
         Crew = crewai_module.Crew
+        LLM = crewai_module.LLM
         Process = crewai_module.Process
         Task = crewai_module.Task
 
@@ -82,6 +111,34 @@ class CrewCollaborationService:
             planning_audits=planning_audits,
             reflection_audits=reflection_audits,
         )
+        crewai_llm = None
+        if crewai_profile is not None:
+            crewai_llm = LLM(
+                model=crewai_profile.model,
+                temperature=llm_temperature,
+                base_url=crewai_profile.base_url,
+                api_base=crewai_profile.base_url,
+                api_key=crewai_profile.api_key,
+            )
+            _LOGGER.warning(
+                "wp11_crewai_profile_selected %s",
+                {
+                    "trace_id": trace_id,
+                    "profile_id": crewai_profile.profile_id,
+                    "profile": crewai_profile.profile,
+                    "model": crewai_profile.model,
+                    "base_url": crewai_profile.base_url,
+                    "route_labels": list(route_meta.get("selected_route_labels", [])),
+                },
+            )
+        else:
+            _LOGGER.warning(
+                "wp11_crewai_profile_unresolved %s",
+                {
+                    "trace_id": trace_id,
+                    "message": "CrewAI coordination fell back to CrewAI/OpenAI defaults outside the WP11 profile pool.",
+                },
+            )
         coordinator = Agent(
             role="WP1-1 Collection Coordinator",
             goal="Assign collection focus and verify source coverage for the current run.",
@@ -91,6 +148,7 @@ class CrewCollaborationService:
             ),
             verbose=False,
             allow_delegation=False,
+            llm=crewai_llm,
         )
         specialist_agents = [
             Agent(
@@ -99,6 +157,7 @@ class CrewCollaborationService:
                 backstory=blueprint["backstory"],
                 verbose=False,
                 allow_delegation=False,
+                llm=crewai_llm,
             )
             for blueprint in collector_blueprints
         ]
@@ -127,7 +186,35 @@ class CrewCollaborationService:
             process=Process.sequential,
             verbose=False,
         )
-        result = crew.kickoff()
+        try:
+            result = crew.kickoff()
+        except Exception as exc:
+            if crewai_profile is not None:
+                failure_payload = {
+                    "trace_id": trace_id,
+                    "profile_id": crewai_profile.profile_id,
+                    "profile": crewai_profile.profile,
+                    "model": crewai_profile.model,
+                    "base_url": crewai_profile.base_url,
+                    "route_labels": list(route_meta.get("selected_route_labels", [])),
+                    "error_type": exc.__class__.__name__,
+                    "error": str(exc)[:300],
+                }
+                _LOGGER.error("wp11_crewai_profile_failed %s", failure_payload)
+                raise RuntimeError(
+                    "CrewAI coordination failed via profile "
+                    f"{crewai_profile.profile_id}/{crewai_profile.profile} "
+                    f"model={crewai_profile.model}: {exc}"
+                ) from exc
+            _LOGGER.error(
+                "wp11_crewai_default_failed %s",
+                {
+                    "trace_id": trace_id,
+                    "error_type": exc.__class__.__name__,
+                    "error": str(exc)[:300],
+                },
+            )
+            raise
         return {
             "engine": "crewai",
             "crewai_available": True,
@@ -140,6 +227,10 @@ class CrewCollaborationService:
                 reflection_audits=reflection_audits,
             ),
             "summary": str(result),
+            "llm_profile_id": crewai_profile.profile_id if crewai_profile else None,
+            "llm_profile": crewai_profile.profile if crewai_profile else None,
+            "llm_model": crewai_profile.model if crewai_profile else None,
+            "llm_route_labels": list(route_meta.get("selected_route_labels", [])),
         }
 
     def _fallback_plan(
@@ -149,6 +240,8 @@ class CrewCollaborationService:
         planning_audits: list[dict[str, Any]] | None,
         reflection_audits: list[dict[str, Any]] | None,
         summary: str,
+        crewai_profile: LlmProfile | None,
+        route_meta: dict[str, Any],
     ) -> dict[str, Any]:
         return {
             "engine": "fallback",
@@ -167,7 +260,30 @@ class CrewCollaborationService:
                 reflection_audits=reflection_audits,
             ),
             "summary": summary,
+            "llm_profile_id": crewai_profile.profile_id if crewai_profile else None,
+            "llm_profile": crewai_profile.profile if crewai_profile else None,
+            "llm_model": crewai_profile.model if crewai_profile else None,
+            "llm_route_labels": list(route_meta.get("selected_route_labels", [])),
         }
+
+    @staticmethod
+    def _resolve_crewai_profile(
+        *,
+        llm_model: str | None,
+        llm_runtime_config: dict[str, Any] | None,
+    ) -> tuple[LlmProfile | None, dict[str, Any]]:
+        runtime_config = llm_runtime_config or {}
+        profiles, route_meta = resolve_model_pool(
+            task_name="planning",
+            default_model=llm_model,
+            base_url=os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL"),
+            api_key=os.getenv("OPENAI_API_KEY"),
+            runtime_config=runtime_config,
+        )
+        for profile in profiles:
+            if profile.api_key or profile.base_url:
+                return profile, route_meta
+        return None, route_meta
 
     @staticmethod
     def _fallback_assignments(

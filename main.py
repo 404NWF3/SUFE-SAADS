@@ -14,6 +14,11 @@ SAADS - WP1-1 Intel Pipeline Debug Runner
     python main.py --list-scenarios        # 列出所有预设场景
     python main.py --verbose               # 显示完整状态字段
     python main.py --mode gap_fill --scenario gap_fill --rounds 2
+    python main.py --dry-run --live        # Print resolved config only
+    python main.py --validate-suite wp11_bugfixes         # Run the bugfix suite
+    python main.py --validate-suite wp11_persist_robustness  # Run the persistence suite
+    python main.py --validate-suite wp11_llm_pool         # Run the LLM pool suite
+    python main.py --mode bootstrap --scenario normal --verbose --live  # Full live run
 """
 from __future__ import annotations
 
