@@ -2,63 +2,57 @@
 
 ## 会话：2026-03-21
 
-### 阶段 1：范围确认与证据收集
+### 阶段 1：恢复上下文与建立核查范围
 - **状态：** complete
-- **开始时间：** 2026-03-21
-- 执行的操作：
+- **执行的操作：**
   - 读取 `planning-with-files-zh` 技能说明。
-  - 检查项目根目录与现有文件结构。
-  - 创建 `task_plan.md`、`findings.md`、`progress.md`。
-  - 从 `run_main.txt`、`.runtime`、`main.py` 开始回溯故障。
-- 创建/修改的文件：
+  - 读取现有 `task_plan.md`、`findings.md`、`progress.md`。
+  - 发现现有规划文件仍指向上一轮修复任务。
+  - 修正规划文件，切换到当前“10 个问题现状复核”任务。
+- **创建/修改的文件：**
   - `task_plan.md`
   - `findings.md`
   - `progress.md`
 
-### 阶段 2：执行链路审查与修复
+### 阶段 2：逐项定位代码与配置
 - **状态：** complete
-- 执行的操作：
-  - 检索 `WP1-1` 全部 LLM 工具实现，确认共有 7 个模块直接调用 `ChatOpenAI(...).with_structured_output(..., method="function_calling")`。
-  - 从 `run_main.txt` 定位 DashScope 返回的 400：`tool_choice` 在 thinking mode 下不支持 `required/object`。
-  - 本地执行 `python main.py -live`，确认 CLI 当前不支持 `-live`，只支持 `--live`。
-  - 增加 `backend/agents/intel_agents/tools/llm_client_factory.py`，为 DashScope Qwen3/Qwen3.5 结构化输出默认关闭 thinking。
-  - 将 7 个结构化 LLM 工具改为统一走兼容工厂。
-  - 新增 `tests/wp11/test_llm_provider_compat.py` 覆盖 provider 兼容逻辑。
-- 创建/修改的文件：
-  - `backend/agents/intel_agents/tools/llm_client_factory.py`
-  - `backend/agents/intel_agents/tools/llm_supervisor_planning_tools.py`
-  - `backend/agents/intel_agents/tools/llm_standardization_tools.py`
-  - `backend/agents/intel_agents/tools/llm_dedup_adjudication_tools.py`
-  - `backend/agents/intel_agents/tools/llm_bom_resolver_tools.py`
-  - `backend/agents/intel_agents/tools/llm_merge_judge_tools.py`
-  - `backend/agents/intel_agents/tools/llm_search_reflection_tools.py`
-  - `backend/agents/intel_agents/tools/llm_coverage_analyst_tools.py`
-  - `tests/wp11/test_llm_provider_compat.py`
+- **执行的操作：**
+  - 按 Bug 1 到 Bug 10 逐项定位相关代码、测试和配置文件。
+  - 确认 Bug 1 已落地为 `ThreadPoolExecutor` 并发执行。
+  - 确认 Bug 2 在 agent 层已部分收口，但 7 个 LLM 工具类仍保留 `gpt-5-mini` 硬编码默认值。
+  - 确认 Bug 3 已同时在提示词和 `_fuse_llm_plan()` 中做每源去重。
+  - 确认 Bug 4 已在 standardizer 中加入 `llm_result is None` guard。
+  - 确认 Bug 6 已改为“循环前 rebuild 一次 + 循环内增量 upsert”。
+  - 确认 Bug 9 的 schema 与迁移 SQL 已进入仓库。
+- **下一步：**
+  - 核对 Dedup 持久化、事务、CVSS 与 Windows 编码收尾问题。
 
-## 测试结果
-| 测试 | 输入 | 预期结果 | 实际结果 | 状态 |
-|------|------|---------|---------|------|
-| CLI 参数验证 | `python main.py -live` | 若支持则进入 live 模式；否则明确报参错误 | 明确报错 `unrecognized arguments: -live` | passed |
-| 新增 provider 兼容测试 | `.venv\\Scripts\\python.exe -m pytest tests/wp11/test_llm_provider_compat.py -q` | DashScope/Qwen 结构化输出默认关闭 thinking | `3 passed` | passed |
-| Phase 3 回归 | `.venv\\Scripts\\python.exe -m pytest tests/wp11/test_phase3_standardization.py -q` | 结构化标准化链路不被破坏 | `16 passed` | passed |
-| Phase 5 回归 | `.venv\\Scripts\\python.exe -m pytest tests/wp11/test_phase5_bom_resolution.py -q` | BOM 解析链路不被破坏 | `22 passed` | passed |
-| Phase 7 回归 | `.venv\\Scripts\\python.exe -m pytest tests/wp11/test_phase7_coverage_gap_fill.py -q` | 覆盖分析链路不被破坏 | `13 passed` | passed |
-| 仓库现有 Phase 6 测试 | `.venv\\Scripts\\python.exe -m pytest tests/wp11/test_phase6_supervisor_planning.py -q` | 现有测试应通过 | 因 `plan_run()` 签名不匹配而失败，属基线漂移 | failed_baseline |
-| 仓库现有 Phase 6 测试 | `.venv\\Scripts\\python.exe -m pytest tests/wp11/test_phase6_search_reflection.py -q` | 现有测试应通过 | 因 DTO 字段/运行状态断言与主干不匹配而失败，属基线漂移 | failed_baseline |
+### 阶段 3：必要的只读验证
+- **状态：** complete
+- **执行的操作：**
+  - 通过 SQL schema、测试文件和脚本输出点补证复核结论。
+  - 确认 Bug 5 只有 `persist_raw_records_to_db=True` 落地，`AttackMergeService` 依赖和静默吞错仍在。
+  - 确认 Bug 7 的单事务批处理结构仍在。
+  - 确认 Bug 8 的 `score_origin=\"db_primary\"` 和 `source_raw_id=raw_id` 仍在。
+  - 确认 Bug 10 只有 `main.py` 做了 UTF-8 包装，Unicode 输出尚未在仓库内统一清理。
+- **下一步：**
+  - 汇总并输出 10 项最终判断。
+
+### 阶段 4：汇总结论
+- **状态：** in_progress
+- **执行的操作：**
+  - 将 10 个问题归类为“已修复 / 仍存在 / 部分存在”。
+  - 把证据写入 `findings.md`。
+- **下一步：**
+  - 输出面向用户的简明结论，并附关键文件位置。
 
 ## 错误日志
 | 时间戳 | 错误 | 尝试次数 | 解决方案 |
 |--------|------|---------|---------|
-| 2026-03-21 | `python main.py -live` 参数错误 | 1 | 已确认需使用 `--live` |
-| 2026-03-21 | 系统 Python 缺少 `langchain_openai`/`langgraph` | 1 | 改用项目 `.venv` |
-| 2026-03-21 | `test_phase6_supervisor_planning.py` 基线失败 | 1 | 标记为仓库已有测试漂移 |
-| 2026-03-21 | `test_phase6_search_reflection.py` 基线失败 | 1 | 标记为仓库已有测试漂移 |
+| 2026-03-21 | 旧 planning 文件目标已过时 | 1 | 已重写为当前“10 个问题现状复核”任务 |
+| 2026-03-21 | `session-catchup.py` 默认路径不存在 | 1 | 改用 `.agents` 下的实际路径 |
 
-## 五问重启检查
-| 问题 | 答案 |
-|------|------|
-| 我在哪里？ | 阶段 5：结论输出 |
-| 我要去哪里？ | 向用户提交 code review 结论与修复建议 |
-| 目标是什么？ | 定位阿里模型降级为 `rules_only_degraded` 的根因并给出修复方案 |
-| 我学到了什么？ | 见 `findings.md` |
-| 我做了什么？ | 见本文件阶段记录 |
+## 当前结论摘要
+- 已修复：Bug 1、3、4、6、9
+- 仍存在：Bug 2、7、8
+- 部分存在：Bug 5、10

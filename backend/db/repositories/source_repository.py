@@ -199,6 +199,10 @@ class SourceRepository(BaseRepository):
         )
         return self._row_to_model(RawIntelRecord, row)
 
+    def get_raw_record_by_id(self, raw_id: str) -> RawIntelRecord | None:
+        row = self._fetch_one(q.GET_RAW_BY_ID, {"raw_id": raw_id})
+        return self._row_to_model(RawIntelRecord, row)
+
     def mark_raw_record_parser_status(
         self, *, raw_id: str, status: str
     ) -> RawIntelRecord | None:

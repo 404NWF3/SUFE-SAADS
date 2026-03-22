@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from ..schemas.intel import BomResolutionDTO, LlmBomResolutionAuditDTO
 from ..services.component_resolution_service import ComponentResolutionService
+from ..tools.llm_client_factory import resolve_default_model
 from ..tools.llm_bom_resolver_tools import LangChainLlmBomResolver
 
 
@@ -41,22 +42,25 @@ class BomMapperAgent:
         *,
         resolution_service: ComponentResolutionService | None = None,
         strategy: BomResolutionStrategyValue = "llm_required",
-        llm_model: str = "gpt-5-mini",
+        llm_model: str | None = None,
         llm_temperature: float = 0.0,
         validate_online: bool = False,
         llm_runtime_config: dict[str, Any] | None = None,
     ) -> None:
         self.resolution_service = resolution_service or ComponentResolutionService()
         self.strategy = strategy
-        self.llm_model = llm_model
+        self.llm_runtime_config = llm_runtime_config or {}
+        self.llm_model = resolve_default_model(
+            llm_model,
+            runtime_config=self.llm_runtime_config,
+        )
         self.llm_temperature = llm_temperature
         self.validate_online = validate_online
-        self.llm_runtime_config = llm_runtime_config or {}
 
         self._llm: LangChainLlmBomResolver | None = None
         if strategy in ("llm_required", "llm_optional"):
             self._llm = LangChainLlmBomResolver(
-                model=llm_model,
+                model=self.llm_model,
                 temperature=llm_temperature,
                 runtime_config=self.llm_runtime_config,
             )
@@ -433,6 +437,7 @@ class BomMapperAgent:
             strategy_executed=strategy_executed,
             llm_model=str(llm_meta.get("llm_model", self.llm_model)),
             llm_profile_id=llm_meta.get("profile_id"),
+            llm_profile=llm_meta.get("profile"),
             prompt_version=(self._llm.PROMPT_VERSION if self._llm else "n/a"),
             llm_confidence=llm_confidence,
             llm_decision=llm_decision_val,
@@ -442,5 +447,8 @@ class BomMapperAgent:
             selected_component_code=selected_code,
             llm_wait_seconds=llm_meta.get("wait_seconds"),
             attempted_profiles=list(llm_meta.get("attempted_profiles", []) or []),
+            attempted_profile_labels=list(
+                llm_meta.get("attempted_profile_labels", []) or []
+            ),
             invoked_at=datetime.now(timezone.utc).isoformat(),
         ).model_dump(mode="python")

@@ -10,6 +10,7 @@ from ..schemas.query import (
 )
 from ..services.query_feedback_memory import QueryFeedbackMemoryService
 from ..services.source_query_template_service import SourceQueryTemplateService
+from ..tools.llm_client_factory import resolve_default_model
 from ..tools import LangChainLlmSearchReflectionAgent
 
 
@@ -27,7 +28,7 @@ class SearchReflectionAgent:
         self,
         *,
         strategy: str = "rules_only",
-        llm_model: str = "gpt-5-mini",
+        llm_model: str | None = None,
         llm_temperature: float = 0.0,
         validate_online: bool = False,
         llm_reflector: Any | None = None,
@@ -36,12 +37,15 @@ class SearchReflectionAgent:
         llm_runtime_config: dict[str, Any] | None = None,
     ) -> None:
         self.strategy = strategy
-        self.llm_model = llm_model
+        self.llm_runtime_config = llm_runtime_config or {}
+        self.llm_model = resolve_default_model(
+            llm_model,
+            runtime_config=self.llm_runtime_config,
+        )
         self.llm_temperature = llm_temperature
         self.validate_online = validate_online
-        self.llm_runtime_config = llm_runtime_config or {}
         self.llm_reflector = llm_reflector or LangChainLlmSearchReflectionAgent(
-            model=llm_model,
+            model=self.llm_model,
             temperature=llm_temperature,
             runtime_config=self.llm_runtime_config,
         )
@@ -319,6 +323,7 @@ class SearchReflectionAgent:
             strategy_executed=strategy_executed,
             llm_model=str(llm_meta.get("llm_model", self.llm_model)),
             llm_profile_id=llm_meta.get("profile_id"),
+            llm_profile=llm_meta.get("profile"),
             prompt_version=getattr(self.llm_reflector, "PROMPT_VERSION", "rules-only"),
             should_retry=bool(decision.get("should_retry", False)),
             stop_reason=str(decision.get("stop_reason", "unknown")),
@@ -336,6 +341,9 @@ class SearchReflectionAgent:
             fallback_reason=fallback_reason,
             llm_wait_seconds=llm_meta.get("wait_seconds"),
             attempted_profiles=list(llm_meta.get("attempted_profiles", []) or []),
+            attempted_profile_labels=list(
+                llm_meta.get("attempted_profile_labels", []) or []
+            ),
             invoked_at=invoked_at,
         ).model_dump(mode="python")
 

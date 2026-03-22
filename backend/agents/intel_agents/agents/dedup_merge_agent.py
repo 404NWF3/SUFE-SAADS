@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from ..schemas.intel import DedupDecisionDTO, MergeAuditRecordDTO, StableAttackRecordDTO
+from ..tools.llm_client_factory import resolve_default_model
 from ..tools import (
     bom_overlap_score,
     build_dedup_text,
@@ -57,7 +58,7 @@ class DedupMergeAgent:
         vector_memory: Any | None = None,
         adjudicator: Any | None = None,
         strategy: str = "rules_only",
-        llm_model: str = "gpt-5-mini",
+        llm_model: str | None = None,
         llm_temperature: float = 0.0,
         validate_online: bool = False,
         merge_judge: Any | None = None,
@@ -66,12 +67,15 @@ class DedupMergeAgent:
         self.vector_memory = vector_memory
         self.adjudicator = adjudicator
         self.strategy = strategy
-        self.llm_model = llm_model
+        self.llm_runtime_config = llm_runtime_config or {}
+        self.llm_model = resolve_default_model(
+            llm_model,
+            runtime_config=self.llm_runtime_config,
+        )
         self.llm_temperature = llm_temperature
         self.validate_online = validate_online
-        self.llm_runtime_config = llm_runtime_config or {}
         self.merge_judge = merge_judge or LangChainLlmMergeJudge(
-            model=llm_model,
+            model=self.llm_model,
             temperature=llm_temperature,
             runtime_config=self.llm_runtime_config,
         )
@@ -233,6 +237,7 @@ class DedupMergeAgent:
                 "strategy_executed": "llm_primary",
                 "llm_model": llm_meta.get("llm_model", self.llm_model),
                 "llm_profile_id": llm_meta.get("profile_id"),
+                "llm_profile": llm_meta.get("profile"),
                 "prompt_version": self.merge_judge.PROMPT_VERSION,
                 "llm_confidence": result.get("confidence", 0.0),
                 "llm_verdict": result.get("verdict", "uncertain"),
@@ -247,6 +252,9 @@ class DedupMergeAgent:
                 "llm_wait_seconds": llm_meta.get("wait_seconds"),
                 "attempted_profiles": list(
                     llm_meta.get("attempted_profiles", []) or []
+                ),
+                "attempted_profile_labels": list(
+                    llm_meta.get("attempted_profile_labels", []) or []
                 ),
                 "invoked_at": invoked_at,
             }

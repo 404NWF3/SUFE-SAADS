@@ -4,8 +4,10 @@ import json
 import os
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from threading import Lock
 from typing import Any
+import warnings
 
 from pydantic import SecretStr
 
@@ -24,11 +26,16 @@ LLM_TASK_NAMES = (
 _PROFILE_STATE_LOCK = Lock()
 _PROFILE_COOLDOWN_UNTIL: dict[str, float] = {}
 _PROFILE_ACTIVE_COUNT: dict[str, int] = {}
+_ROOT_DIR = Path(__file__).resolve().parents[4]
+_LLM_PROFILES_FILENAME = "wp11_llm_profiles.json"
+_LLM_ROUTE_PRESETS_FILENAME = "wp11_llm_route_presets.json"
+_VALID_PROFILE_LABELS = ("cheap_fast", "balanced", "fallback")
 
 
 @dataclass(frozen=True)
 class LlmProfile:
     profile_id: str
+    profile: str
     provider: str
     model: str
     base_url: str | None
@@ -135,6 +142,37 @@ def _read_json_env(name: str) -> Any | None:
         raise RuntimeError(f"{name} must be valid JSON.") from exc
 
 
+def _read_json_file(path: Path) -> Any | None:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"{path.name} must be valid JSON.") from exc
+
+
+def _load_json_payload(
+    *,
+    filename: str,
+    env_name: str,
+) -> tuple[Any | None, dict[str, str]]:
+    path = _ROOT_DIR / filename
+    file_payload = _read_json_file(path)
+    if file_payload is not None:
+        return file_payload, {"source": "file", "path": str(path)}
+
+    env_payload = _read_json_env(env_name)
+    if env_payload is not None:
+        warnings.warn(
+            f"{env_name} is deprecated; prefer {filename} in the project root.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+        return env_payload, {"source": "env", "path": env_name}
+
+    return None, {"source": "default", "path": str(path)}
+
+
 def _resolve_value(raw_value: Any, env_key: str | None) -> Any:
     if raw_value is not None:
         return raw_value
@@ -143,16 +181,121 @@ def _resolve_value(raw_value: Any, env_key: str | None) -> Any:
     return None
 
 
+def resolve_default_model(
+    default_model: str | None = None,
+    *,
+    runtime_config: dict[str, Any] | None = None,
+) -> str:
+    runtime_config = runtime_config if isinstance(runtime_config, dict) else {}
+    candidates = (
+        default_model,
+        runtime_config.get("llm_model"),
+        os.getenv("OPENAI_MODEL"),
+        os.getenv("OPENAI_FAST_MODEL"),
+        "qwen3.5-plus",
+    )
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        resolved = str(candidate).strip()
+        if resolved:
+            return resolved
+    return "qwen3.5-plus"
+
+
+def _normalize_profile_id(raw_value: Any, *, idx: int) -> str:
+    profile_id = str(raw_value or f"{idx + 1}").strip()
+    if not profile_id:
+        raise RuntimeError("LLM profile_id cannot be empty.")
+    if not profile_id.isdigit():
+        raise RuntimeError(
+            f"LLM profile_id must be a numeric string, got {profile_id!r}."
+        )
+    return profile_id
+
+
+def _normalize_profile_label(raw_value: Any) -> str:
+    profile_label = str(raw_value or "").strip().lower()
+    if profile_label not in _VALID_PROFILE_LABELS:
+        raise RuntimeError(
+            "LLM profile must be one of "
+            + ", ".join(_VALID_PROFILE_LABELS)
+            + f"; got {profile_label!r}."
+        )
+    return profile_label
+
+
+def _preferred_default_profile_label(profiles: dict[str, LlmProfile]) -> str:
+    available_labels = {
+        profile.profile for profile in profiles.values() if profile.enabled
+    }
+    for label in ("balanced", "cheap_fast", "fallback"):
+        if label in available_labels:
+            return label
+    raise RuntimeError("No enabled LLM profiles are available.")
+
+
+def _normalize_route_labels(raw_route: Any) -> list[str]:
+    normalized: list[str] = []
+    for raw_label in raw_route or []:
+        label = _normalize_profile_label(raw_label)
+        if label not in normalized:
+            normalized.append(label)
+    if not normalized:
+        raise RuntimeError("LLM route cannot be empty.")
+    return normalized
+
+
+def _profile_sort_key(profile: LlmProfile) -> tuple[int, str]:
+    try:
+        return int(profile.profile_id), profile.profile_id
+    except ValueError:
+        return 10**9, profile.profile_id
+
+
+def _expand_route_labels(
+    route_labels: list[str],
+    profiles: dict[str, LlmProfile],
+) -> list[LlmProfile]:
+    expanded: list[LlmProfile] = []
+    seen_profile_ids: set[str] = set()
+    grouped: dict[str, list[LlmProfile]] = {
+        label: sorted(
+            [
+                profile
+                for profile in profiles.values()
+                if profile.enabled and profile.profile == label
+            ],
+            key=_profile_sort_key,
+        )
+        for label in _VALID_PROFILE_LABELS
+    }
+    for label in route_labels:
+        candidates = grouped.get(label) or []
+        if not candidates:
+            raise RuntimeError(
+                f"LLM route references profile label {label!r}, but no enabled profile matches it."
+            )
+        for profile in candidates:
+            if profile.profile_id in seen_profile_ids:
+                continue
+            seen_profile_ids.add(profile.profile_id)
+            expanded.append(profile)
+    return expanded
+
+
 def _build_default_profile(
     *,
-    default_model: str,
+    default_model: str | None,
     base_url: str | None,
     api_key: str | None,
 ) -> LlmProfile:
+    resolved_model = resolve_default_model(default_model)
     return LlmProfile(
-        profile_id="default",
+        profile_id="100",
+        profile="balanced",
         provider="openai_compatible",
-        model=default_model,
+        model=resolved_model,
         base_url=base_url,
         api_key=api_key,
         enabled=True,
@@ -165,18 +308,22 @@ def _build_default_profile(
 
 def _load_profiles(
     *,
-    default_model: str,
+    default_model: str | None,
     base_url: str | None,
     api_key: str | None,
-) -> dict[str, LlmProfile]:
-    payload = _read_json_env("WP11_LLM_PROFILES_JSON")
+) -> tuple[dict[str, LlmProfile], dict[str, str]]:
+    resolved_default_model = resolve_default_model(default_model)
+    payload, source_meta = _load_json_payload(
+        filename=_LLM_PROFILES_FILENAME,
+        env_name="WP11_LLM_PROFILES_JSON",
+    )
     if payload is None:
         default_profile = _build_default_profile(
-            default_model=default_model,
+            default_model=resolved_default_model,
             base_url=base_url,
             api_key=api_key,
         )
-        return {default_profile.profile_id: default_profile}
+        return {default_profile.profile_id: default_profile}, source_meta
 
     rows = payload.get("profiles") if isinstance(payload, dict) else payload
     if not isinstance(rows, list):
@@ -186,13 +333,20 @@ def _load_profiles(
     for idx, row in enumerate(rows):
         if not isinstance(row, dict):
             raise RuntimeError("Each LLM profile must be a JSON object.")
-        profile_id = str(row.get("profile_id") or f"profile_{idx + 1}").strip()
-        if not profile_id:
-            raise RuntimeError("LLM profile_id cannot be empty.")
+        profile_id = _normalize_profile_id(row.get("profile_id"), idx=idx)
+        profile_label = _normalize_profile_label(row.get("profile"))
+        resolved_model = str(
+            _resolve_value(row.get("model"), row.get("model_env")) or resolved_default_model
+        ).strip()
+        if not resolved_model:
+            raise RuntimeError(
+                f"LLM profile {profile_id} must define model or model_env."
+            )
         profile = LlmProfile(
             profile_id=profile_id,
+            profile=profile_label,
             provider=str(row.get("provider") or "openai_compatible"),
-            model=str(row.get("model") or default_model).strip(),
+            model=resolved_model,
             base_url=_resolve_value(row.get("base_url"), row.get("base_url_env")),
             api_key=_resolve_value(row.get("api_key"), row.get("api_key_env")),
             enabled=bool(row.get("enabled", True)),
@@ -203,30 +357,40 @@ def _load_profiles(
             max_concurrency=max(1, int(row.get("max_concurrency", 2))),
             cooldown_seconds=max(1.0, float(row.get("cooldown_seconds", 30.0))),
         )
+        if profile.profile_id in profiles:
+            raise RuntimeError(f"Duplicate LLM profile_id: {profile.profile_id}")
         profiles[profile.profile_id] = profile
 
     if not profiles:
         default_profile = _build_default_profile(
-            default_model=default_model,
+            default_model=resolved_default_model,
             base_url=base_url,
             api_key=api_key,
         )
         profiles[default_profile.profile_id] = default_profile
-    return profiles
+    return profiles, source_meta
 
 
-def _default_route_presets(default_profile_id: str) -> dict[str, dict[str, list[str]]]:
+def _default_route_presets(
+    profiles: dict[str, LlmProfile],
+) -> dict[str, dict[str, list[str]]]:
+    default_label = _preferred_default_profile_label(profiles)
     return {
         "default": {
-            task_name: [default_profile_id] for task_name in LLM_TASK_NAMES
+            task_name: [default_label] for task_name in LLM_TASK_NAMES
         }
     }
 
 
-def _load_route_presets(default_profile_id: str) -> dict[str, dict[str, list[str]]]:
-    payload = _read_json_env("WP11_LLM_ROUTE_PRESETS_JSON")
+def _load_route_presets(
+    profiles: dict[str, LlmProfile],
+) -> tuple[dict[str, dict[str, list[str]]], dict[str, str]]:
+    payload, source_meta = _load_json_payload(
+        filename=_LLM_ROUTE_PRESETS_FILENAME,
+        env_name="WP11_LLM_ROUTE_PRESETS_JSON",
+    )
     if payload is None:
-        return _default_route_presets(default_profile_id)
+        return _default_route_presets(profiles), source_meta
     if not isinstance(payload, dict):
         raise RuntimeError("WP11_LLM_ROUTE_PRESETS_JSON must be a JSON object.")
 
@@ -236,38 +400,40 @@ def _load_route_presets(default_profile_id: str) -> dict[str, dict[str, list[str
             raise RuntimeError("Each route preset must be a JSON object.")
         task_routes: dict[str, list[str]] = {}
         for task_name in LLM_TASK_NAMES:
-            route = preset_payload.get(task_name) or [default_profile_id]
+            route = preset_payload.get(task_name) or [
+                _preferred_default_profile_label(profiles)
+            ]
             if not isinstance(route, list):
                 raise RuntimeError("Each route preset entry must be a JSON array.")
-            task_routes[task_name] = [
-                str(profile_id).strip()
-                for profile_id in route
-                if str(profile_id).strip()
-            ] or [default_profile_id]
+            task_routes[task_name] = _normalize_route_labels(route)
         route_presets[str(preset_name)] = task_routes
 
     if "default" not in route_presets:
         route_presets["default"] = {
-            task_name: [default_profile_id] for task_name in LLM_TASK_NAMES
+            task_name: [_preferred_default_profile_label(profiles)]
+            for task_name in LLM_TASK_NAMES
         }
-    return route_presets
+    return route_presets, source_meta
 
 
 def resolve_model_pool(
     *,
     task_name: str,
-    default_model: str,
+    default_model: str | None,
     base_url: str | None,
     api_key: str | None,
     runtime_config: dict[str, Any] | None = None,
 ) -> tuple[list[LlmProfile], dict[str, Any]]:
-    profiles = _load_profiles(
-        default_model=default_model,
+    resolved_default_model = resolve_default_model(
+        default_model,
+        runtime_config=runtime_config,
+    )
+    profiles, profiles_source = _load_profiles(
+        default_model=resolved_default_model,
         base_url=base_url,
         api_key=api_key,
     )
-    default_profile_id = next(iter(profiles))
-    route_presets = _load_route_presets(default_profile_id)
+    route_presets, route_source = _load_route_presets(profiles)
 
     runtime_config = runtime_config or {}
     preset_name = str(
@@ -280,53 +446,56 @@ def resolve_model_pool(
     if not isinstance(task_routes, dict):
         task_routes = {}
     configured_route = task_routes.get(task_name) or preset.get(task_name) or [
-        default_profile_id
+        _preferred_default_profile_label(profiles)
     ]
-    selected_profiles: list[LlmProfile] = []
-    for profile_id in configured_route:
-        profile = profiles.get(str(profile_id))
-        if profile and profile.enabled:
-            selected_profiles.append(profile)
-
-    if not selected_profiles:
-        selected_profiles = [
-            profile for profile in profiles.values() if profile.enabled
-        ] or [profiles[default_profile_id]]
+    route_labels = _normalize_route_labels(configured_route)
+    selected_profiles = _expand_route_labels(route_labels, profiles)
 
     return selected_profiles, {
         "selected_preset": preset_name,
+        "selected_route_labels": route_labels,
+        "expanded_profile_ids": [profile.profile_id for profile in selected_profiles],
+        "expanded_profile_labels": [profile.profile for profile in selected_profiles],
         "route_presets": route_presets,
         "profiles": profiles,
+        "profiles_source": profiles_source,
+        "route_presets_source": route_source,
+        "resolved_default_model": resolved_default_model,
     }
 
 
 def describe_model_pool(
     *,
-    default_model: str,
+    default_model: str | None,
     base_url: str | None,
     api_key: str | None,
     runtime_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     runtime_config = runtime_config or {}
-    profiles = _load_profiles(
-        default_model=default_model,
+    resolved_default_model = resolve_default_model(
+        default_model,
+        runtime_config=runtime_config,
+    )
+    profiles, profiles_source = _load_profiles(
+        default_model=resolved_default_model,
         base_url=base_url,
         api_key=api_key,
     )
-    default_profile_id = next(iter(profiles))
-    route_presets = _load_route_presets(default_profile_id)
+    route_presets, route_source = _load_route_presets(profiles)
     _, route_meta = resolve_model_pool(
         task_name="standardization",
-        default_model=default_model,
+        default_model=resolved_default_model,
         base_url=base_url,
         api_key=api_key,
         runtime_config=runtime_config,
     )
     return {
         "selected_preset": route_meta["selected_preset"],
+        "resolved_default_model": resolved_default_model,
         "profiles": [
             {
                 "profile_id": profile.profile_id,
+                "profile": profile.profile,
                 "provider": profile.provider,
                 "model": profile.model,
                 "base_url": profile.base_url,
@@ -337,16 +506,49 @@ def describe_model_pool(
                 "cooldown_seconds": profile.cooldown_seconds,
                 "has_api_key": bool(profile.api_key),
             }
-            for profile in profiles.values()
+            for profile in sorted(profiles.values(), key=_profile_sort_key)
         ],
+        "profiles_source": profiles_source,
+        "route_presets_source": route_source,
         "route_presets": route_presets,
+        "selected_route_labels": route_meta["selected_route_labels"],
+        "expanded_profile_ids": route_meta["expanded_profile_ids"],
+        "expanded_profile_labels": route_meta["expanded_profile_labels"],
     }
+
+
+def recommended_task_concurrency(
+    *,
+    task_name: str,
+    default_model: str | None,
+    base_url: str | None,
+    api_key: str | None,
+    runtime_config: dict[str, Any] | None = None,
+    upper_bound: int = 32,
+) -> int:
+    profiles, _ = resolve_model_pool(
+        task_name=task_name,
+        default_model=default_model,
+        base_url=base_url,
+        api_key=api_key,
+        runtime_config=runtime_config,
+    )
+    budget = sum(
+        max(1, int(profile.max_concurrency))
+        for profile in profiles
+        if profile.supports_structured_output
+        and profile.enabled
+        and (profile.api_key or profile.base_url)
+    )
+    if budget <= 0:
+        budget = 1
+    return max(1, min(int(upper_bound), budget))
 
 
 def list_available_profile_ids(
     *,
     task_name: str,
-    default_model: str,
+    default_model: str | None,
     base_url: str | None,
     api_key: str | None,
     runtime_config: dict[str, Any] | None = None,
@@ -469,7 +671,7 @@ def invoke_structured_with_model_pool(
     prompt: Any,
     schema: type[Any],
     payload: dict[str, Any],
-    default_model: str,
+    default_model: str | None,
     temperature: float,
     base_url: str | None,
     api_key: str | None,
@@ -492,18 +694,21 @@ def invoke_structured_with_model_pool(
     errors: list[str] = []
     total_wait_seconds = 0.0
     attempted_profiles: list[str] = []
+    attempted_profile_labels: list[str] = []
     suggested_retry_after = 0.0
 
     for profile in profiles:
         if not profile.supports_structured_output:
-            errors.append(f"{profile.profile_id}: structured output not supported")
+            errors.append(
+                f"{profile.profile_id}/{profile.profile}: structured output not supported"
+            )
             continue
 
         cooldown_remaining = _cooldown_remaining_seconds(profile.profile_id)
         if cooldown_remaining > 0:
             suggested_retry_after = max(suggested_retry_after, cooldown_remaining)
             errors.append(
-                f"{profile.profile_id}: cooling down for {cooldown_remaining:.1f}s"
+                f"{profile.profile_id}/{profile.profile}: cooling down for {cooldown_remaining:.1f}s"
             )
             continue
         slot_waited_seconds = _acquire_profile_slot_with_wait(
@@ -513,12 +718,13 @@ def invoke_structured_with_model_pool(
         if slot_waited_seconds is None:
             suggested_retry_after = max(suggested_retry_after, short_wait_threshold)
             errors.append(
-                f"{profile.profile_id}: max_concurrency {profile.max_concurrency} reached"
+                f"{profile.profile_id}/{profile.profile}: max_concurrency {profile.max_concurrency} reached"
             )
             continue
         total_wait_seconds += slot_waited_seconds
 
         attempted_profiles.append(profile.profile_id)
+        attempted_profile_labels.append(profile.profile)
         try:
             for attempt in range(1, retry_attempts + 1):
                 try:
@@ -541,18 +747,21 @@ def invoke_structured_with_model_pool(
                         )
                     return validated, {
                         "profile_id": profile.profile_id,
+                        "profile": profile.profile,
                         "provider": profile.provider,
                         "llm_model": profile.model,
                         "base_url": profile.base_url,
                         "attempts": attempt,
                         "wait_seconds": round(total_wait_seconds, 3),
                         "selected_preset": route_meta["selected_preset"],
+                        "selected_route_labels": route_meta["selected_route_labels"],
                         "attempted_profiles": attempted_profiles,
+                        "attempted_profile_labels": attempted_profile_labels,
                     }
                 except Exception as exc:
                     error_family = classify_llm_error(exc)
                     message = (
-                        f"{profile.profile_id}:{error_family}:{type(exc).__name__}:"
+                        f"{profile.profile_id}/{profile.profile}:{error_family}:{type(exc).__name__}:"
                         f"{str(exc)[:220]}"
                     )
                     if _is_retryable_family(error_family) and attempt < retry_attempts:

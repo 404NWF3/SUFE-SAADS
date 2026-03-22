@@ -1,0 +1,56 @@
+{
+  "profiles": [
+    {
+      "profile_id": "101",
+      "profile": "cheap_fast",
+      "provider": "openai_compatible",
+      "model_env": "OPENAI_FAST_MODEL",
+      "base_url_env": "OPENAI_API_BASE",
+      "api_key_env": "OPENAI_API_KEY",
+      "enabled": true,
+      "supports_structured_output": true,
+      "cost_tier": "cheap",
+      "max_concurrency": 1,
+      "cooldown_seconds": 20
+    },
+    {
+      "profile_id": "102",
+      "profile": "cheap_fast",
+      "provider": "openai_compatible",
+      "model_env": "OPENAI_MODEL",
+      "base_url_env": "OPENAI_API_BASE",
+      "api_key_env": "OPENAI_API_KEY",
+      "enabled": true,
+      "supports_structured_output": true,
+      "cost_tier": "cheap",
+      "max_concurrency": 1,
+      "cooldown_seconds": 20
+    },
+    {
+      "profile_id": "201",
+      "profile": "balanced",
+      "provider": "openai_compatible",
+      "model_env": "OPENAI_MODEL",
+      "base_url_env": "OPENAI_API_BASE",
+      "api_key_env": "OPENAI_API_KEY",
+      "enabled": true,
+      "supports_structured_output": true,
+      "cost_tier": "standard",
+      "max_concurrency": 1,
+      "cooldown_seconds": 30
+    },
+    {
+      "profile_id": "301",
+      "profile": "fallback",
+      "provider": "openai_compatible",
+      "model_env": "OPENAI_MODEL",
+      "base_url_env": "OPENAI_API_BASE",
+      "api_key_env": "OPENAI_API_KEY",
+      "enabled": true,
+      "supports_structured_output": true,
+      "cost_tier": "fallback",
+      "max_concurrency": 1,
+      "cooldown_seconds": 45
+    }
+  ]
+}

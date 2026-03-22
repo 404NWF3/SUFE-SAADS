@@ -10,6 +10,7 @@ from ..schemas.intel import (
     StandardizedIntelDTO,
 )
 from ..schemas.runtime import StandardizationStrategyValue
+from ..tools.llm_client_factory import resolve_default_model
 from ..tools import (
     LangChainLlmStandardizer,
     RuleValidatorFuser,
@@ -60,7 +61,7 @@ class StandardizerAgent:
         strategy: StandardizationStrategyValue = "llm_required",
         llm_standardizer: Any | None = None,
         rule_validator: RuleValidatorFuser | None = None,
-        llm_model: str = "gpt-5-mini",
+        llm_model: str | None = None,
         llm_temperature: float = 0.0,
         validate_online: bool = False,
         llm_runtime_config: dict[str, Any] | None = None,
@@ -68,13 +69,18 @@ class StandardizerAgent:
     ) -> None:
         self.strategy = strategy
         self.validate_online = validate_online
+        self.llm_runtime_config = llm_runtime_config or {}
+        self.llm_model = resolve_default_model(
+            llm_model,
+            runtime_config=self.llm_runtime_config,
+        )
         self.standardization_max_concurrency = max(
             1, int(standardization_max_concurrency or 1)
         )
         self.llm_standardizer = llm_standardizer or LangChainLlmStandardizer(
-            model=llm_model,
+            model=self.llm_model,
             temperature=llm_temperature,
-            runtime_config=llm_runtime_config,
+            runtime_config=self.llm_runtime_config,
         )
         self.rule_validator = rule_validator or RuleValidatorFuser()
 
@@ -558,6 +564,7 @@ class StandardizerAgent:
                 )
             ),
             llm_profile_id=llm_meta.get("profile_id"),
+            llm_profile=llm_meta.get("profile"),
             prompt_version=getattr(
                 self.llm_standardizer, "PROMPT_VERSION", PROMPT_VERSION
             ),
@@ -571,6 +578,9 @@ class StandardizerAgent:
             rule_validation_passed=projection.get("rule_validation_passed", True),
             llm_wait_seconds=llm_meta.get("wait_seconds"),
             attempted_profiles=list(llm_meta.get("attempted_profiles", []) or []),
+            attempted_profile_labels=list(
+                llm_meta.get("attempted_profile_labels", []) or []
+            ),
             invoked_at=_utcnow(),
         ).model_dump(mode="python")
 

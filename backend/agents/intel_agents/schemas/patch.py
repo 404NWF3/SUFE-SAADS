@@ -37,6 +37,8 @@ class GraphNodePatchDTO(BaseModel):
     dedup_decisions: list[dict[str, Any]] | None = None
     stable_attack_records: list[dict[str, Any]] | None = None
     merge_audits: list[dict[str, Any]] | None = None
+    dedup_persist_summary: dict[str, Any] | None = None
+    dedup_audit_summary: dict[str, Any] | None = None
     weak_signal_clusters: list[dict[str, Any]] | None = None
     coverage_gaps: list[dict[str, Any]] | None = None
     gap_fill_dispatch_plans: list[dict[str, Any]] | None = None

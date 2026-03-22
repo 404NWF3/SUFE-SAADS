@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -53,6 +54,14 @@ class DebugInjectionDTO(_StrictModel):
     force_no_results: bool = False
 
 
+def _default_runtime_llm_model() -> str:
+    return (
+        os.getenv("OPENAI_MODEL")
+        or os.getenv("OPENAI_FAST_MODEL")
+        or "qwen3.5-plus"
+    )
+
+
 class RuntimeContextDTO(_StrictModel):
     run_mode: RunModeValue = "bootstrap"
     base_run_mode: RunModeValue = "bootstrap"
@@ -64,7 +73,7 @@ class RuntimeContextDTO(_StrictModel):
     bom_resolution_strategy: BomResolutionStrategyValue = "llm_required"
     dedup_merge_strategy: DedupMergeStrategyValue = "llm_required"
     dedup_adjudication_strategy: DedupAdjudicationStrategyValue = "rules_only"
-    llm_model: str = Field(default="gpt-5-mini", min_length=1)
+    llm_model: str = Field(default_factory=_default_runtime_llm_model, min_length=1)
     llm_temperature: float = Field(default=0.0, ge=0.0, le=1.0)
     validate_llm_online: bool = False
     llm_route_preset: str = Field(default="default", min_length=1)
@@ -146,8 +155,26 @@ class RuntimeContextDTO(_StrictModel):
         """生产模式：真实 API 采集 + LLM 全链路推理。
         llm_model 默认读取环境变量 OPENAI_MODEL，未设置时降级为 qwen3.5-plus。
         """
-        import os
-        model = llm_model or os.getenv("OPENAI_MODEL", "qwen3.5-plus")
+        from ..tools.llm_client_factory import (
+            recommended_task_concurrency,
+            resolve_default_model,
+        )
+
+        model = resolve_default_model(llm_model)
+        route_preset = os.getenv("WP11_LLM_DEFAULT_ROUTE_PRESET", "default")
+        runtime_llm_config = {
+            "llm_model": model,
+            "llm_route_preset": route_preset,
+            "llm_task_routes": {},
+        }
+        standardization_default_concurrency = recommended_task_concurrency(
+            task_name="standardization",
+            default_model=model,
+            base_url=os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL"),
+            api_key=os.getenv("OPENAI_API_KEY"),
+            runtime_config=runtime_llm_config,
+            upper_bound=32,
+        )
         return cls.model_validate(
             {
                 "run_mode": run_mode,
@@ -163,14 +190,14 @@ class RuntimeContextDTO(_StrictModel):
                 "llm_model": model,
                 "llm_temperature": 0.0,
                 "validate_llm_online": False,
-                "llm_route_preset": "default",
+                "llm_route_preset": route_preset,
                 "llm_task_routes": {},
                 "llm_retry_attempts": 3,
                 "llm_backoff_base_seconds": 2.0,
                 "llm_backoff_max_seconds": 30.0,
                 "llm_short_wait_threshold_seconds": 60.0,
                 "llm_resume_on_exhausted_retry": True,
-                "standardization_max_concurrency": 2,
+                "standardization_max_concurrency": standardization_default_concurrency,
                 "planning_max_parallel_sources": 4,
                 "planning_max_items_per_source": 10,
                 "planning_max_reflection_rounds": 1,
@@ -272,7 +299,7 @@ class RuntimeContextDTO(_StrictModel):
                 "bom_resolution_strategy": "rules_only",  # stub mode; production default is llm_required
                 "dedup_merge_strategy": "rules_only",  # stub mode; production default is llm_required
                 "dedup_adjudication_strategy": "rules_only",
-                "llm_model": "gpt-5-mini",
+                "llm_model": _default_runtime_llm_model(),
                 "llm_temperature": 0.0,
                 "validate_llm_online": False,
                 "llm_route_preset": "default",

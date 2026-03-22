@@ -6,6 +6,7 @@ from typing import Any, Literal, cast
 from ..schemas.plan import CollectionPlanDTO, SourceExecutionPlanDTO
 from ..schemas.query import LlmPlanningAuditDTO
 from ..schemas.runtime import RuntimeContextDTO
+from ..tools.llm_client_factory import resolve_default_model
 from ..tools import LangChainLlmSupervisorPlanner
 
 
@@ -16,19 +17,22 @@ class SupervisorAgent:
         self,
         *,
         strategy: str = "rules_only",
-        llm_model: str = "gpt-5-mini",
+        llm_model: str | None = None,
         llm_temperature: float = 0.0,
         validate_online: bool = False,
         planner: Any | None = None,
         llm_runtime_config: dict[str, Any] | None = None,
     ) -> None:
         self.strategy = strategy
-        self.llm_model = llm_model
+        self.llm_runtime_config = llm_runtime_config or {}
+        self.llm_model = resolve_default_model(
+            llm_model,
+            runtime_config=self.llm_runtime_config,
+        )
         self.llm_temperature = llm_temperature
         self.validate_online = validate_online
-        self.llm_runtime_config = llm_runtime_config or {}
         self.planner = planner or LangChainLlmSupervisorPlanner(
-            model=llm_model,
+            model=self.llm_model,
             temperature=llm_temperature,
             runtime_config=self.llm_runtime_config,
         )
@@ -374,6 +378,7 @@ class SupervisorAgent:
             strategy_executed=strategy_executed,
             llm_model=str(llm_meta.get("llm_model", self.llm_model)),
             llm_profile_id=llm_meta.get("profile_id"),
+            llm_profile=llm_meta.get("profile"),
             prompt_version=getattr(self.planner, "PROMPT_VERSION", "rules-only"),
             plan_rationale=str(plan.get("rationale", "")),
             source_plan_count=len(plan.get("source_plans", [])),
@@ -385,6 +390,9 @@ class SupervisorAgent:
             fallback_reason=fallback_reason,
             llm_wait_seconds=llm_meta.get("wait_seconds"),
             attempted_profiles=list(llm_meta.get("attempted_profiles", []) or []),
+            attempted_profile_labels=list(
+                llm_meta.get("attempted_profile_labels", []) or []
+            ),
             invoked_at=invoked_at,
         ).model_dump(mode="python")
 

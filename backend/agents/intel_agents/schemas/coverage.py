@@ -123,6 +123,7 @@ class LlmCoverageAnalysisAuditDTO(_StrictModel):
     strategy_executed: str = Field(min_length=1)
     llm_model: str = Field(min_length=1)
     llm_profile_id: str | None = None
+    llm_profile: str | None = None
     prompt_version: str = Field(min_length=1)
     gap_type: str = Field(min_length=1)
     should_dispatch_gap_fill: bool = False
@@ -133,4 +134,5 @@ class LlmCoverageAnalysisAuditDTO(_StrictModel):
     fallback_reason: str | None = None
     llm_wait_seconds: float | None = Field(default=None, ge=0.0)
     attempted_profiles: list[str] = Field(default_factory=list)
+    attempted_profile_labels: list[str] = Field(default_factory=list)
     invoked_at: str = Field(min_length=1)

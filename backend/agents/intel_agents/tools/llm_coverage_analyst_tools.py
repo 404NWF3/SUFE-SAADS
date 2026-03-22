@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .llm_client_factory import (
     invoke_structured_with_model_pool,
     list_available_profile_ids,
+    resolve_default_model,
 )
 
 
@@ -50,19 +51,22 @@ class LangChainLlmCoverageAnalyst:
     def __init__(
         self,
         *,
-        model: str = "gpt-5-mini",
+        model: str | None = None,
         temperature: float = 0.0,
         base_url: str | None = None,
         api_key: str | None = None,
         runtime_config: dict[str, Any] | None = None,
     ) -> None:
-        self.model = model
+        self.runtime_config = runtime_config or {}
+        self.model = resolve_default_model(
+            model,
+            runtime_config=self.runtime_config,
+        )
         self.temperature = temperature
         self.base_url = (
             base_url or os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL")
         )
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        self.runtime_config = runtime_config or {}
         self.last_invocation_meta: dict[str, Any] = {}
 
     def is_available(self) -> bool:

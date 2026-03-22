@@ -49,6 +49,8 @@ class WP11GraphState(TypedDict, total=False):
     dedup_decisions: Annotated[list[dict[str, Any]], operator.add]
     stable_attack_records: list[dict[str, Any]]
     merge_audits: Annotated[list[dict[str, Any]], operator.add]
+    dedup_persist_summary: dict[str, Any] | None
+    dedup_audit_summary: dict[str, Any] | None
     weak_signal_clusters: Annotated[list[dict[str, Any]], operator.add]
     coverage_gaps: Annotated[list[dict[str, Any]], operator.add]
     gap_fill_dispatch_plans: Annotated[list[dict[str, Any]], operator.add]
@@ -113,6 +115,8 @@ def build_initial_state(
         "dedup_decisions": [],
         "stable_attack_records": [],
         "merge_audits": [],
+        "dedup_persist_summary": None,
+        "dedup_audit_summary": None,
         "weak_signal_clusters": [],
         "coverage_gaps": [],
         "gap_fill_dispatch_plans": [],

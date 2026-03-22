@@ -216,6 +216,7 @@ class LlmStandardizationAuditDTO(_StrictModel):
     strategy_executed: str = Field(min_length=1)
     llm_model: str = Field(min_length=1)
     llm_profile_id: str | None = None
+    llm_profile: str | None = None
     prompt_version: str = Field(min_length=1)
     llm_confidence: float = Field(ge=0.0, le=1.0)
     llm_reason: str = Field(min_length=1)
@@ -227,6 +228,7 @@ class LlmStandardizationAuditDTO(_StrictModel):
     rule_validation_passed: bool = True
     llm_wait_seconds: float | None = Field(default=None, ge=0.0)
     attempted_profiles: list[str] = Field(default_factory=list)
+    attempted_profile_labels: list[str] = Field(default_factory=list)
     invoked_at: str = Field(min_length=1)
 
 
@@ -273,6 +275,7 @@ class LlmBomResolutionAuditDTO(_StrictModel):
     strategy_executed: str = Field(min_length=1)
     llm_model: str = Field(min_length=1)
     llm_profile_id: str | None = None
+    llm_profile: str | None = None
     prompt_version: str = Field(min_length=1)
     llm_confidence: float = Field(ge=0.0, le=1.0)
     llm_decision: str = Field(min_length=1)
@@ -282,6 +285,7 @@ class LlmBomResolutionAuditDTO(_StrictModel):
     selected_component_code: str | None = None
     llm_wait_seconds: float | None = Field(default=None, ge=0.0)
     attempted_profiles: list[str] = Field(default_factory=list)
+    attempted_profile_labels: list[str] = Field(default_factory=list)
     invoked_at: str = Field(min_length=1)
 
 
@@ -318,6 +322,7 @@ class LlmDedupJudgmentAuditDTO(_StrictModel):
     strategy_executed: str = Field(min_length=1)
     llm_model: str = Field(min_length=1)
     llm_profile_id: str | None = None
+    llm_profile: str | None = None
     prompt_version: str = Field(min_length=1)
     llm_confidence: float = Field(ge=0.0, le=1.0)
     llm_verdict: str = Field(min_length=1)
@@ -331,4 +336,5 @@ class LlmDedupJudgmentAuditDTO(_StrictModel):
     bom_delta_detected: bool = False
     llm_wait_seconds: float | None = Field(default=None, ge=0.0)
     attempted_profiles: list[str] = Field(default_factory=list)
+    attempted_profile_labels: list[str] = Field(default_factory=list)
     invoked_at: str = Field(min_length=1)

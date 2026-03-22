@@ -1,13 +1,24 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime, timezone
+import json
+import logging
+from pathlib import Path
 from typing import Any
+from uuid import UUID
 
-from backend.db.services.attack_merge_service import AttackMergeService
+from backend.db.dtos import TaxonomyItemDTO
 from backend.db.services.cvss_service import CvssService
 from backend.db.services.taxonomy_service import TaxonomyService
 from backend.db.typing import SqlContext
 from backend.db.unit_of_work import UnitOfWork
+
+logger = logging.getLogger(__name__)
+
+_VALID_SEVERITY_LEVELS = {"info", "low", "medium", "high", "critical"}
+_VALID_CVSS_VERSIONS = {"3.0", "3.1", "4.0"}
+_VALID_CVSS_SEVERITY_LABELS = {"None", "Low", "Medium", "High", "Critical"}
 
 
 class DedupMemoryService:
@@ -103,7 +114,7 @@ class DedupMemoryService:
                                 if first.primary_cvss_base_score is not None
                                 else None,
                                 "severity_label": first.primary_cvss_severity_label,
-                                "score_origin": "db_primary",
+                                "score_origin": _normalize_score_origin("db_primary"),
                                 "vector_string": first.primary_cvss_vector,
                             }
                             if first.primary_cvss_version
@@ -124,130 +135,423 @@ class DedupMemoryService:
                         }
                     )
                 return records
-        except Exception:
+        except Exception as exc:
+            logger.warning("dedup_memory_load failed: %s", exc)
             return []
         return []
 
     def save_records(
         self, records: list[dict[str, Any]], *, trace_id: str | None = None
-    ) -> None:
-        self.persist_records(records, trace_id=trace_id)
+    ) -> dict[str, Any]:
+        return self.persist_records(records, trace_id=trace_id)
 
     def persist_records(
         self, records: list[dict[str, Any]], *, trace_id: str | None = None
-    ) -> None:
+    ) -> dict[str, Any]:
+        summary = _new_persist_summary()
         if not records:
-            return
-        try:
-            with UnitOfWork(
-                context=SqlContext(trace_id=trace_id, agent_name="dedup_memory_persist")
-            ) as uow:
-                attack_merge = AttackMergeService(uow)
-                taxonomy_service = TaxonomyService(uow)
-                cvss_service = CvssService(uow)
-                for record in records:
-                    raw_id = next(
-                        iter(
-                            record.get("related_raw_ids", [])
-                            or [f"db_synth_{record['stable_attack_id']}"]
-                        )
+            return summary
+        for record in records:
+            attack_code = str(
+                record.get("stable_attack_code")
+                or record.get("stable_attack_id")
+                or "unknown"
+            )
+            summary["attempted_count"] += 1
+            try:
+                normalized, normalization_notes = _normalize_record_for_persist(record)
+                raw_id = _select_existing_raw_id(
+                    raw_ids=normalized.get("related_raw_ids", []) or [],
+                    trace_id=trace_id,
+                )
+                attack = self._persist_attack_entry(
+                    attack_code=attack_code,
+                    record=normalized,
+                    trace_id=trace_id,
+                )
+                attack_id = str(attack.attack_id)
+                item_result = {
+                    "attack_code": attack_code,
+                    "status": "persisted",
+                    "normalization_notes": normalization_notes,
+                    "substeps": {
+                        "attack_entry": "ok",
+                        "evidence": "skipped_no_valid_raw",
+                        "taxonomy": "skipped_empty",
+                        "component_impacts": "skipped_empty",
+                        "cvss": "skipped_empty",
+                    },
+                }
+                summary["persisted_count"] += 1
+                _mark_substep(summary, "attack_entry", "ok")
+
+                evidence_status = self._persist_attack_evidence(
+                    attack_id=attack_id,
+                    raw_id=raw_id,
+                    evidence_snippet=normalized.get("summary"),
+                    trace_id=trace_id,
+                )
+                item_result["substeps"]["evidence"] = evidence_status
+                _mark_substep(summary, "evidence", evidence_status)
+
+                taxonomy_status = self._persist_taxonomy_items(
+                    attack_id=attack_id,
+                    taxonomy_items=normalized.get("taxonomy_items", []),
+                    trace_id=trace_id,
+                )
+                item_result["substeps"]["taxonomy"] = taxonomy_status
+                _mark_substep(summary, "taxonomy", taxonomy_status)
+
+                component_status = self._persist_component_impacts(
+                    attack_id=attack_id,
+                    bom_mentions=normalized.get("bom_mentions", []),
+                    evidence_refs=normalized.get("evidence_refs", []) or [],
+                    trace_id=trace_id,
+                )
+                item_result["substeps"]["component_impacts"] = component_status
+                _mark_substep(summary, "component_impacts", component_status)
+
+                cvss_status = self._persist_cvss_hint(
+                    attack_id=attack_id,
+                    cvss_hint=normalized.get("cvss_hint"),
+                    raw_id=raw_id,
+                    trace_id=trace_id,
+                )
+                item_result["substeps"]["cvss"] = cvss_status
+                _mark_substep(summary, "cvss", cvss_status)
+
+                if any(
+                    status.endswith("_failed")
+                    for status in item_result["substeps"].values()
+                ):
+                    item_result["status"] = "partial_failure"
+                    summary["partial_failure_count"] += 1
+                    summary["failure_reasons"].append(
+                        {
+                            "attack_code": attack_code,
+                            "stage": "substeps",
+                            "message": "One or more persistence substeps failed.",
+                            "substeps": dict(item_result["substeps"]),
+                        }
                     )
-                    merge_result = attack_merge.merge_parsed_attack(
-                        raw_id=raw_id,
-                        attack_code=record.get("stable_attack_code")
-                        or record["stable_attack_id"],
-                        canonical_name=record["canonical_name"],
-                        attack_family=record["attack_family"],
-                        severity_level=record["severity_level"],
-                        summary=record.get("summary") or record["canonical_name"],
-                        description=record.get("description")
-                        or record["canonical_name"],
-                        exploit_preconditions=None,
-                        impact_scope=None,
-                        confidence_score=float(record.get("confidence_score", 0.0)),
-                        first_seen_at=None,
-                        last_seen_at=None,
-                        stix_type=None,
-                        stix_payload=None,
-                        evidence_role="supporting",
-                        extractor_name="dedup_memory_service",
-                        evidence_snippet=record.get("summary"),
-                        dedup_similarity_score=1.0,
-                        dedup_rule_name="stable_attack_memory_sync",
-                        dedup_decision="merge",
-                        dedup_matched_attack_id=None,
+                    summary["dead_letter_count"] += 1
+                    dead_letter_path = self._append_dead_letter(
+                        trace_id=trace_id,
+                        kind="persist_partial",
+                        payload={
+                            "attack_code": attack_code,
+                            "record": normalized,
+                            "result": item_result,
+                        },
                     )
-                    if record.get("taxonomy_items"):
-                        taxonomy_service.replace_taxonomy_set(
-                            attack_id=merge_result.attack_id,
-                            taxonomy_items=record["taxonomy_items"],
-                        )
-                    for bom in record.get("bom_mentions", []):
-                        if not bom.get("mentioned_name"):
-                            continue
-                        bom_resolution = uow.components.find_component_by_alias(
-                            str(bom["mentioned_name"]).lower().replace(" ", "")
-                        ) or uow.components.get_component_by_name(
-                            str(bom["mentioned_name"])
-                        )
-                        if bom_resolution is not None:
-                            uow.components.upsert_attack_component_impact(
-                                attack_id=merge_result.attack_id,
-                                component_id=str(bom_resolution.component_id),
-                                version_constraint_raw=bom.get("mentioned_version"),
-                                normalized_constraint=bom.get("mentioned_version"),
-                                match_mode="dedup_memory_sync",
-                                impact_scope="direct",
-                                confidence_score=float(
-                                    bom.get("confidence_score", 0.7)
-                                ),
-                                evidence_uri=next(
-                                    iter(record.get("evidence_refs", []) or []), None
-                                ),
-                            )
-                    cvss_hint = record.get("cvss_hint")
-                    if cvss_hint and cvss_hint.get("base_score") is not None:
-                        cvss_service.add_cvss_assessment(
-                            attack_id=merge_result.attack_id,
-                            source_raw_id=raw_id,
-                            cvss_version=cvss_hint.get("cvss_version") or "3.1",
-                            vector_string=cvss_hint.get("vector_string"),
-                            base_score=float(cvss_hint.get("base_score")),
-                            temporal_score=None,
-                            environmental_score=None,
-                            severity_label=cvss_hint.get("severity_label") or "Medium",
-                            exploitability_subscore=None,
-                            impact_subscore=None,
-                            score_origin=cvss_hint.get("score_origin") or "estimated",
-                            score_provider="dedup_memory_service",
-                            confidence_score=0.8,
-                            is_primary=True,
-                        )
-        except Exception:
-            return
+                    summary["dead_letter_path"] = dead_letter_path
+            except Exception as exc:
+                logger.warning(
+                    "dedup_memory_persist skipped attack_code=%s: %s",
+                    attack_code,
+                    exc,
+                )
+                summary["failed_count"] += 1
+                summary["failure_reasons"].append(
+                    {
+                        "attack_code": attack_code,
+                        "stage": "attack_entry",
+                        "message": str(exc),
+                    }
+                )
+                summary["dead_letter_count"] += 1
+                summary["dead_letter_path"] = self._append_dead_letter(
+                    trace_id=trace_id,
+                    kind="persist_failed",
+                    payload={
+                        "attack_code": attack_code,
+                        "record": record,
+                        "error_type": type(exc).__name__,
+                        "message": str(exc),
+                    },
+                )
+                _mark_substep(summary, "attack_entry", "failed")
+                continue
+        summary["failure_reasons"] = summary["failure_reasons"][:20]
+        return summary
 
     def append_audits(
         self, audits: list[dict[str, Any]], *, trace_id: str | None = None
-    ) -> None:
+    ) -> dict[str, Any]:
+        summary = _new_audit_summary()
         if not audits:
-            return
-        try:
-            with UnitOfWork(
-                context=SqlContext(trace_id=trace_id, agent_name="dedup_memory_audit")
-            ) as uow:
-                for audit in audits:
+            return summary
+        for audit in audits:
+            summary["attempted_count"] += 1
+            candidate_raw_id = _parse_uuid_or_none(audit.get("candidate_raw_id"))
+            if candidate_raw_id is None:
+                logger.warning(
+                    "dedup_memory_audit skipped invalid candidate_raw_id=%r",
+                    audit.get("candidate_raw_id"),
+                )
+                summary["invalid_candidate_count"] += 1
+                continue
+            try:
+                with UnitOfWork(
+                    context=SqlContext(
+                        trace_id=trace_id,
+                        agent_name="dedup_memory_audit",
+                    )
+                ) as uow:
+                    if uow.sources.get_raw_record_by_id(candidate_raw_id) is None:
+                        logger.warning(
+                            "dedup_memory_audit skipped missing candidate_raw_id=%s",
+                            candidate_raw_id,
+                        )
+                        summary["missing_candidate_count"] += 1
+                        continue
                     uow.governance.insert_dedup_audit(
-                        candidate_raw_id=str(
-                            audit.get("candidate_raw_id", "audit-only")
+                        candidate_raw_id=candidate_raw_id,
+                        matched_attack_id=_parse_uuid_or_none(
+                            audit.get("matched_attack_id")
                         ),
-                        matched_attack_id=audit.get("matched_attack_id"),
                         similarity_score=float(audit.get("similarity_score", 0.0)),
-                        rule_name="phase4_multi_stage_dedup",
+                        rule_name=str(
+                            audit.get("rule_name") or "phase4_multi_stage_dedup"
+                        ),
                         decision=audit.get("decision", "review"),
                         reviewer_name=None,
                     )
-        except Exception:
-            return
+                summary["persisted_count"] += 1
+            except Exception as exc:
+                logger.warning(
+                    "dedup_memory_audit skipped candidate_raw_id=%s: %s",
+                    candidate_raw_id,
+                    exc,
+                )
+                summary["failed_count"] += 1
+                summary["failure_reasons"].append(
+                    {
+                        "candidate_raw_id": candidate_raw_id,
+                        "message": str(exc),
+                    }
+                )
+                continue
+        summary["failure_reasons"] = summary["failure_reasons"][:20]
+        return summary
+
+    def _persist_attack_entry(
+        self,
+        *,
+        attack_code: str,
+        record: dict[str, Any],
+        trace_id: str | None,
+    ):
+        with UnitOfWork(
+            context=SqlContext(
+                trace_id=trace_id,
+                agent_name="dedup_memory_persist_attack",
+            )
+        ) as uow:
+            return uow.attacks.upsert_attack_entry_by_code(
+                attack_code=attack_code,
+                canonical_name=record["canonical_name"],
+                attack_family=record["attack_family"],
+                severity_level=record["severity_level"],
+                entry_status="active",
+                summary=record["summary"],
+                description=record["description"],
+                exploit_preconditions=None,
+                impact_scope=None,
+                confidence_score=float(record.get("confidence_score", 0.0)),
+                first_seen_at=None,
+                last_seen_at=None,
+                stix_type=None,
+                stix_payload=None,
+            )
+
+    def _persist_attack_evidence(
+        self,
+        *,
+        attack_id: str,
+        raw_id: str | None,
+        evidence_snippet: Any,
+        trace_id: str | None,
+    ) -> str:
+        if raw_id is None:
+            return "skipped_no_valid_raw"
+        try:
+            with UnitOfWork(
+                context=SqlContext(
+                    trace_id=trace_id,
+                    agent_name="dedup_memory_persist_evidence",
+                )
+            ) as uow:
+                uow.attacks.insert_attack_evidence(
+                    attack_id=attack_id,
+                    raw_id=raw_id,
+                    evidence_role="supporting",
+                    extractor_name="dedup_memory_service",
+                    evidence_snippet=str(evidence_snippet or "")[:1000] or None,
+                )
+            return "ok"
+        except Exception as exc:
+            logger.warning(
+                "dedup_memory_persist_evidence failed attack_id=%s raw_id=%s: %s",
+                attack_id,
+                raw_id,
+                exc,
+            )
+            return "write_failed"
+
+    def _persist_taxonomy_items(
+        self,
+        *,
+        attack_id: str,
+        taxonomy_items: list[dict[str, Any]],
+        trace_id: str | None,
+    ) -> str:
+        normalized_taxonomy, _ = _normalize_taxonomy_items(taxonomy_items)
+        if not normalized_taxonomy:
+            return "skipped_empty"
+        try:
+            with UnitOfWork(
+                context=SqlContext(
+                    trace_id=trace_id,
+                    agent_name="dedup_memory_persist_taxonomy",
+                )
+            ) as uow:
+                TaxonomyService(uow).replace_taxonomy_set(
+                    attack_id=attack_id,
+                    taxonomy_items=normalized_taxonomy,
+                )
+            return "ok"
+        except Exception as exc:
+            logger.warning(
+                "dedup_memory_persist_taxonomy failed attack_id=%s: %s",
+                attack_id,
+                exc,
+            )
+            return "write_failed"
+
+    def _persist_component_impacts(
+        self,
+        *,
+        attack_id: str,
+        bom_mentions: list[dict[str, Any]],
+        evidence_refs: list[Any],
+        trace_id: str | None,
+    ) -> str:
+        normalized_mentions = _normalize_bom_mentions(bom_mentions)
+        if not normalized_mentions:
+            return "skipped_empty"
+        evidence_uri = next(
+            (
+                str(ref).strip()
+                for ref in evidence_refs
+                if str(ref).strip()
+            ),
+            None,
+        )
+        try:
+            wrote_any = False
+            with UnitOfWork(
+                context=SqlContext(
+                    trace_id=trace_id,
+                    agent_name="dedup_memory_persist_components",
+                )
+            ) as uow:
+                for bom in normalized_mentions:
+                    bom_resolution = uow.components.find_component_by_alias(
+                        str(bom["mentioned_name"]).lower().replace(" ", "")
+                    ) or uow.components.get_component_by_name(
+                        str(bom["mentioned_name"])
+                    )
+                    if bom_resolution is None:
+                        continue
+                    wrote_any = True
+                    uow.components.upsert_attack_component_impact(
+                        attack_id=attack_id,
+                        component_id=str(bom_resolution.component_id),
+                        version_constraint_raw=bom.get("mentioned_version"),
+                        normalized_constraint=bom.get("mentioned_version"),
+                        match_mode="dedup_memory_sync",
+                        impact_scope="direct",
+                        confidence_score=float(bom.get("confidence_score", 0.7)),
+                        evidence_uri=evidence_uri,
+                    )
+            return "ok" if wrote_any else "skipped_no_component_match"
+        except Exception as exc:
+            logger.warning(
+                "dedup_memory_persist_components failed attack_id=%s: %s",
+                attack_id,
+                exc,
+            )
+            return "write_failed"
+
+    def _persist_cvss_hint(
+        self,
+        *,
+        attack_id: str,
+        cvss_hint: dict[str, Any] | None,
+        raw_id: str | None,
+        trace_id: str | None,
+    ) -> str:
+        normalized_cvss = _normalize_cvss_hint(cvss_hint)
+        if normalized_cvss is None:
+            return "skipped_empty"
+        try:
+            with UnitOfWork(
+                context=SqlContext(
+                    trace_id=trace_id,
+                    agent_name="dedup_memory_persist_cvss",
+                )
+            ) as uow:
+                CvssService(uow).add_cvss_assessment(
+                    attack_id=attack_id,
+                    source_raw_id=raw_id,
+                    cvss_version=normalized_cvss["cvss_version"],
+                    vector_string=normalized_cvss.get("vector_string"),
+                    base_score=float(normalized_cvss["base_score"]),
+                    temporal_score=None,
+                    environmental_score=None,
+                    severity_label=normalized_cvss["severity_label"],
+                    exploitability_subscore=None,
+                    impact_subscore=None,
+                    score_origin=normalized_cvss["score_origin"],
+                    score_provider="dedup_memory_service",
+                    confidence_score=0.8,
+                    is_primary=True,
+                )
+            return "ok"
+        except Exception as exc:
+            logger.warning(
+                "dedup_memory_persist_cvss failed attack_id=%s: %s",
+                attack_id,
+                exc,
+            )
+            return "write_failed"
+
+    def _append_dead_letter(
+        self,
+        *,
+        trace_id: str | None,
+        kind: str,
+        payload: dict[str, Any],
+    ) -> str | None:
+        try:
+            dead_letter_dir = Path(self.base_dir or ".runtime/wp11/dedup") / "dead_letters"
+            dead_letter_dir.mkdir(parents=True, exist_ok=True)
+            safe_trace = _safe_path_token(trace_id or "manual")
+            target = dead_letter_dir / f"{kind}_{safe_trace}.jsonl"
+            envelope = {
+                "kind": kind,
+                "trace_id": trace_id,
+                "written_at": datetime.now(timezone.utc).isoformat(),
+                **payload,
+            }
+            with target.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(envelope, ensure_ascii=False, default=str))
+                fh.write("\n")
+            return str(target)
+        except Exception as exc:
+            logger.warning("dedup_memory_dead_letter failed: %s", exc)
+            return None
 
 
 def _dedupe_bom_mentions(mentions: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -262,3 +566,243 @@ def _dedupe_bom_mentions(mentions: list[dict[str, Any]]) -> list[dict[str, Any]]
         ):
             deduped[key] = mention
     return list(deduped.values())
+
+
+def _normalize_score_origin(value: Any) -> str:
+    allowed = {"supplied", "calculated", "estimated", "manual"}
+    normalized = str(value or "").strip().lower()
+    if normalized in allowed:
+        return normalized
+    return "estimated"
+
+
+def _parse_uuid_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        return str(UUID(raw))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _select_existing_raw_id(*, raw_ids: list[Any], trace_id: str | None) -> str | None:
+    for raw_id in raw_ids:
+        normalized = _parse_uuid_or_none(raw_id)
+        if normalized is None:
+            continue
+        with UnitOfWork(
+            context=SqlContext(
+                trace_id=trace_id,
+                agent_name="dedup_memory_resolve_raw",
+            ),
+            read_only=True,
+        ) as uow:
+            if uow.sources.get_raw_record_by_id(normalized) is not None:
+                return normalized
+    return None
+
+
+def _new_persist_summary() -> dict[str, Any]:
+    return {
+        "attempted_count": 0,
+        "persisted_count": 0,
+        "partial_failure_count": 0,
+        "failed_count": 0,
+        "dead_letter_count": 0,
+        "dead_letter_path": None,
+        "failure_reasons": [],
+        "substep_counts": {
+            "attack_entry": {},
+            "evidence": {},
+            "taxonomy": {},
+            "component_impacts": {},
+            "cvss": {},
+        },
+    }
+
+
+def _new_audit_summary() -> dict[str, Any]:
+    return {
+        "attempted_count": 0,
+        "persisted_count": 0,
+        "invalid_candidate_count": 0,
+        "missing_candidate_count": 0,
+        "failed_count": 0,
+        "failure_reasons": [],
+    }
+
+
+def _mark_substep(summary: dict[str, Any], substep: str, status: str) -> None:
+    bucket = summary.setdefault("substep_counts", {}).setdefault(substep, {})
+    bucket[status] = int(bucket.get(status, 0)) + 1
+
+
+def _normalize_record_for_persist(
+    record: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    notes: list[str] = []
+    canonical_name = str(record.get("canonical_name") or "").strip()
+    if not canonical_name:
+        canonical_name = str(
+            record.get("stable_attack_code")
+            or record.get("stable_attack_id")
+            or "unknown_attack"
+        ).strip()
+        notes.append("canonical_name_defaulted_from_attack_code")
+
+    attack_family = str(record.get("attack_family") or "").strip()
+    if not attack_family:
+        attack_family = "unknown"
+        notes.append("attack_family_defaulted_unknown")
+    if len(attack_family) > 80:
+        attack_family = attack_family[:80]
+        notes.append("attack_family_truncated_80")
+
+    severity_level = str(record.get("severity_level") or "").strip().lower()
+    if severity_level not in _VALID_SEVERITY_LEVELS:
+        raise ValueError(f"invalid severity_level={severity_level!r}")
+
+    summary = str(record.get("summary") or "").strip()
+    if not summary:
+        summary = canonical_name
+        notes.append("summary_defaulted_from_canonical_name")
+
+    description = str(record.get("description") or "").strip()
+    if not description:
+        description = summary
+        notes.append("description_defaulted_from_summary")
+
+    raw_confidence = record.get("confidence_score", 0.0)
+    try:
+        parsed_confidence = float(raw_confidence or 0.0)
+    except (TypeError, ValueError):
+        parsed_confidence = 0.0
+        notes.append("confidence_score_defaulted_zero")
+    confidence_score = _clamp(parsed_confidence, 0.0, 1.0)
+    if parsed_confidence != confidence_score:
+        notes.append("confidence_score_clamped")
+
+    normalized_taxonomy, taxonomy_notes = _normalize_taxonomy_items(
+        record.get("taxonomy_items", []) or []
+    )
+    notes.extend(taxonomy_notes)
+
+    normalized = dict(record)
+    normalized.update(
+        {
+            "canonical_name": canonical_name,
+            "attack_family": attack_family,
+            "severity_level": severity_level,
+            "summary": summary,
+            "description": description,
+            "confidence_score": confidence_score,
+            "taxonomy_items": normalized_taxonomy,
+            "bom_mentions": _normalize_bom_mentions(record.get("bom_mentions", []) or []),
+            "cvss_hint": _normalize_cvss_hint(record.get("cvss_hint")),
+        }
+    )
+    return normalized, notes
+
+
+def _normalize_taxonomy_items(
+    items: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    normalized: list[dict[str, Any]] = []
+    notes: list[str] = []
+    seen_primary: set[str] = set()
+    for idx, item in enumerate(items):
+        try:
+            dto = TaxonomyItemDTO.model_validate(item)
+            payload = dto.model_dump(mode="python")
+            taxonomy_type = payload["taxonomy_type"]
+            if payload["is_primary"]:
+                if taxonomy_type in seen_primary:
+                    payload["is_primary"] = False
+                    notes.append(
+                        f"taxonomy_items[{idx}] duplicate_primary_demoted"
+                    )
+                else:
+                    seen_primary.add(taxonomy_type)
+            normalized.append(payload)
+        except Exception as exc:
+            notes.append(f"taxonomy_items[{idx}] skipped:{type(exc).__name__}")
+    return normalized, notes
+
+
+def _normalize_bom_mentions(mentions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
+    for mention in mentions:
+        name = str(mention.get("mentioned_name") or "").strip()
+        if not name:
+            continue
+        dedupe_key = name.lower()
+        if dedupe_key in seen_names:
+            continue
+        seen_names.add(dedupe_key)
+        normalized.append(
+            {
+                **mention,
+                "mentioned_name": name,
+                "mentioned_version": (
+                    str(mention.get("mentioned_version")).strip()
+                    if mention.get("mentioned_version") is not None
+                    else None
+                ),
+                "confidence_score": _clamp(
+                    float(mention.get("confidence_score", 0.7) or 0.7),
+                    0.0,
+                    1.0,
+                ),
+            }
+        )
+    return normalized
+
+
+def _normalize_cvss_hint(cvss_hint: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not cvss_hint:
+        return None
+    raw_score = cvss_hint.get("base_score")
+    if raw_score is None:
+        return None
+    try:
+        base_score = _clamp(float(raw_score), 0.0, 10.0)
+    except (TypeError, ValueError):
+        return None
+    cvss_version = str(cvss_hint.get("cvss_version") or "3.1").strip()
+    if cvss_version not in _VALID_CVSS_VERSIONS:
+        cvss_version = "3.1"
+    severity_label = str(cvss_hint.get("severity_label") or "").strip()
+    if severity_label not in _VALID_CVSS_SEVERITY_LABELS:
+        severity_label = _cvss_severity_label(base_score)
+    vector_string = cvss_hint.get("vector_string")
+    return {
+        "cvss_version": cvss_version,
+        "base_score": base_score,
+        "severity_label": severity_label,
+        "score_origin": _normalize_score_origin(cvss_hint.get("score_origin")),
+        "vector_string": str(vector_string).strip()[:255] if vector_string else None,
+    }
+
+
+def _cvss_severity_label(base_score: float) -> str:
+    if base_score <= 0.0:
+        return "None"
+    if base_score < 4.0:
+        return "Low"
+    if base_score < 7.0:
+        return "Medium"
+    if base_score < 9.0:
+        return "High"
+    return "Critical"
+
+
+def _clamp(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(maximum, value))
+
+
+def _safe_path_token(value: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in value)

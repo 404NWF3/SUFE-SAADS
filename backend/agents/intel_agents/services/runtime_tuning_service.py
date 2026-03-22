@@ -134,14 +134,14 @@ def build_runtime_parameter_catalog(
             "type": "string",
             "default": context.llm_route_preset,
             "options": route_preset_options,
-            "description": "Selects the default ordered model route for all LLM tasks.",
+            "description": "Selects the default ordered profile-label route for all LLM tasks.",
         },
         {
             "key": "llm_task_routes",
             "group": "llm_tasks",
             "type": "object",
             "default": context.llm_task_routes,
-            "description": "Overrides the candidate profile order per task.",
+            "description": "Overrides the ordered profile-label route per task, for example ['cheap_fast', 'fallback'].",
         },
         {
             "key": "llm_retry_attempts",

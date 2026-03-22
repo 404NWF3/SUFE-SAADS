@@ -62,6 +62,8 @@ def _with_state_defaults(state: dict[str, Any]) -> dict[str, Any]:
     cloned.setdefault("llm_bom_resolution_audits", [])
     cloned.setdefault("llm_dedup_judgments", [])
     cloned.setdefault("dedup_decisions", [])
+    cloned.setdefault("dedup_persist_summary", None)
+    cloned.setdefault("dedup_audit_summary", None)
     cloned.setdefault("weak_signal_clusters", [])
     cloned.setdefault("coverage_gaps", [])
     cloned.setdefault("gap_fill_dispatch_plans", [])
@@ -864,11 +866,11 @@ def semantic_dedup_and_merge_node(state: dict[str, Any]) -> dict[str, Any]:
             )
         finally:
             vector_memory.close()
-        memory.save_records(
+        persist_summary = memory.save_records(
             dedup_result["stable_attack_records"],
             trace_id=current_state.get("trace_id"),
         )
-        memory.append_audits(
+        audit_summary = memory.append_audits(
             dedup_result["merge_audits"], trace_id=current_state.get("trace_id")
         )
         decisions = [
@@ -879,6 +881,8 @@ def semantic_dedup_and_merge_node(state: dict[str, Any]) -> dict[str, Any]:
             "dedup_decisions": decisions,
             "stable_attack_records": dedup_result["stable_attack_records"],
             "merge_audits": dedup_result["merge_audits"],
+            "dedup_persist_summary": persist_summary,
+            "dedup_audit_summary": audit_summary,
             "llm_dedup_judgments": llm_dedup_judgments,
             "standardized_items": dedup_result["resolved_items"],
             "new_attack_count": dedup_result["new_attack_count"],

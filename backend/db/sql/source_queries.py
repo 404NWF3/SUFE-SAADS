@@ -90,6 +90,14 @@ FROM wp11.raw_intel_record
 WHERE source_id = %(source_id)s AND content_hash = %(content_hash)s
 """
 
+GET_RAW_BY_ID = """
+SELECT
+    raw_id, source_id, task_id, source_uri, title, content_hash, raw_format, payload_uri, language_code,
+    relevance_score, parser_status, fetched_at, created_at, is_deleted
+FROM wp11.raw_intel_record
+WHERE raw_id = %(raw_id)s
+"""
+
 MARK_RAW_PARSER_STATUS = """
 UPDATE wp11.raw_intel_record
 SET parser_status = %(parser_status)s

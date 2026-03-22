@@ -1,5 +1,5 @@
 """
-SAADS – WP1-1 Intel Pipeline Debug Runner
+SAADS - WP1-1 Intel Pipeline Debug Runner
 ==========================================
 逐步调试入口：每个图节点执行完毕后打印状态差异，支持多种场景注入。
 
@@ -67,18 +67,18 @@ def _c(text: str, *styles: str) -> str:
     return f"{codes}{text}{_COLORS['reset']}"
 
 
-def _sep(char: str = "─", width: int = 72) -> str:
+def _sep(char: str = "-", width: int = 72) -> str:
     return _c(char * width, "dim")
 
 
 def _header(title: str, width: int = 72) -> str:
-    pad = (width - len(title) - 2) // 2
-    line = "═" * pad + f" {title} " + "═" * pad
+    pad = max(0, (width - len(title) - 2) // 2)
+    line = "=" * pad + f" {title} " + "=" * pad
     return _c(line, "bold", "cyan")
 
 
 def _section(title: str) -> str:
-    return _c(f"▸ {title}", "bold", "white")
+    return _c(f"> {title}", "bold", "white")
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +95,7 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "force_no_results": False,
     },
     "low_yield": {
-        "description": "强制触发低收益 → 反思循环 (reflect_search_strategy → dispatch_collection)",
+        "description": "强制触发低收益 -> 反思循环 (reflect_search_strategy -> dispatch_collection)",
         "fail_once_nodes": [],
         "always_fail_nodes": [],
         "force_low_yield": True,
@@ -103,7 +103,7 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "force_no_results": False,
     },
     "gap_fill": {
-        "description": "强制触发覆盖缺口填补 → coverage_gap_analysis 路由回 supervisor_plan",
+        "description": "强制触发覆盖缺口填补 -> coverage_gap_analysis 路由回 supervisor_plan",
         "fail_once_nodes": [],
         "always_fail_nodes": [],
         "force_low_yield": False,
@@ -211,7 +211,7 @@ NODE_FOCUS: dict[str, list[str]] = {
     "assess_collection_yield":      ["collection_yield_summary", "reflection_needed", "reflection_rationale"],
     "reflect_search_strategy":      ["llm_reflection_audits", "reflection_round", "reflection_needed"],
     "parse_and_standardize":        ["standardized_items", "llm_standardization_audits", "processed_count"],
-    "semantic_dedup_and_merge":     ["dedup_decisions", "llm_dedup_judgments", "dedup_merged_count", "stable_attack_records"],
+    "semantic_dedup_and_merge":     ["dedup_decisions", "llm_dedup_judgments", "dedup_merged_count", "stable_attack_records", "dedup_persist_summary", "dedup_audit_summary"],
     "resolve_ai_bom":               ["llm_bom_resolution_audits", "bom_queue_count"],
     "review_ai_bom_resolution":     ["stable_attack_records"],
     "score_confidence_and_novelty": ["stable_attack_records", "new_attack_count"],
@@ -300,12 +300,12 @@ class StepDebugger:
     ) -> dict[str, Any]:
         cfg = SCENARIOS[scenario]
 
-        print(_header("SAADS WP1-1 Intel Pipeline – Step Debugger"))
+        print(_header("SAADS WP1-1 Intel Pipeline - Step Debugger"))
         print()
         print(_section("运行配置"))
         print(f"  run_mode  : {_c(run_mode, 'green')}")
         print(f"  mode      : {_c('LIVE' if live else 'stub', 'green' if live else 'yellow')}")
-        print(f"  scenario  : {_c(scenario, 'green')} — {cfg['description']}")
+        print(f"  scenario  : {_c(scenario, 'green')} - {cfg['description']}")
         print(f"  gap_rounds: {gap_fill_rounds}")
         if cfg["fail_once_nodes"]:
             print(f"  fail_once : {cfg['fail_once_nodes']}")
@@ -382,7 +382,11 @@ class StepDebugger:
                     e for e in merged.get("errors", [])
                     if isinstance(e, dict) and e.get("node") == node_name
                 ]
-                status_icon = _c("✓", "green") if not errors_in_node else _c("✗", "red")
+                status_icon = (
+                    _c("[OK]", "green")
+                    if not errors_in_node
+                    else _c("[FAIL]", "red")
+                )
                 print(f"\n{status_icon} [{idx:02d}] {_c(node_name, 'bold', 'white')}")
 
                 # 关注字段
@@ -413,7 +417,7 @@ class StepDebugger:
                 elapsed = time.perf_counter() - t_node
                 node_times[node_name] = elapsed
                 print(f"  {_c(f'{elapsed*1000:.1f}ms', 'dim')}")
-                print(_sep("·"))
+                print(_sep("."))
 
                 prev_state = merged
 
@@ -456,7 +460,7 @@ class StepDebugger:
             ("alert_candidates",     len(state.get("alert_candidates", []))),
         ]
         for name, val in metrics:
-            bar = "█" * min(val, 20)
+            bar = "#" * min(val, 20)
             print(f"  {name:<28}: {_c(str(val).rjust(4), 'green')}  {_c(bar, 'blue')}")
         print()
 
@@ -473,7 +477,7 @@ class StepDebugger:
         completed = set(state.get("completed_nodes", []))
         for i, node in enumerate(node_seq, 1):
             elapsed_ms = node_times.get(node, 0) * 1000
-            tick = _c("✓", "green") if node in completed else _c("○", "dim")
+            tick = _c("[OK]", "green") if node in completed else _c("[PEND]", "dim")
             print(f"  {tick} [{i:02d}] {node:<36} {_c(f'{elapsed_ms:.1f}ms', 'dim')}")
         print()
 
@@ -554,6 +558,11 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="仅打印配置，不实际运行",
     )
+    parser.add_argument(
+        "--validate-suite",
+        choices=["wp11_bugfixes", "wp11_persist_robustness", "wp11_llm_pool"],
+        help="运行内置验证套件并退出",
+    )
     return parser.parse_args()
 
 
@@ -578,7 +587,21 @@ def main() -> None:
         print(f"  scenario: {args.scenario}")
         print(f"  rounds  : {args.rounds}")
         print(f"  verbose : {args.verbose}")
+        print(f"  validate: {args.validate_suite}")
         return
+
+    if args.validate_suite == "wp11_bugfixes":
+        from backend.wp11_bugfix_validator import run_wp11_bugfix_suite
+
+        sys.exit(run_wp11_bugfix_suite(verbose=args.verbose))
+    if args.validate_suite == "wp11_persist_robustness":
+        from backend.wp11_bugfix_validator import run_wp11_persist_robustness_suite
+
+        sys.exit(run_wp11_persist_robustness_suite(verbose=args.verbose))
+    if args.validate_suite == "wp11_llm_pool":
+        from backend.wp11_bugfix_validator import run_wp11_llm_pool_suite
+
+        sys.exit(run_wp11_llm_pool_suite(verbose=args.verbose))
 
     debugger = StepDebugger(verbose=args.verbose)
     try:
@@ -589,7 +612,7 @@ def main() -> None:
             live=args.live,
         )
     except KeyboardInterrupt:
-        print(f"\n{_c('中断', 'yellow')} — 运行被用户终止")
+        print(f"\n{_c('中断', 'yellow')} - 运行被用户终止")
         sys.exit(1)
     except Exception as exc:
         print(f"\n{_c('FATAL', 'red', 'bold')}: {exc}")

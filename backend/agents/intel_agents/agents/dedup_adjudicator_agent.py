@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..tools.llm_client_factory import resolve_default_model
 from ..tools import LangChainLlmDedupAdjudicator
 
 
@@ -21,17 +22,22 @@ class DedupAdjudicatorAgent:
         *,
         strategy: str = "rules_only",
         llm_adjudicator: Any | None = None,
-        llm_model: str = "gpt-5-mini",
+        llm_model: str | None = None,
         llm_temperature: float = 0.0,
         validate_online: bool = False,
         llm_runtime_config: dict[str, Any] | None = None,
     ) -> None:
         self.strategy = strategy
         self.validate_online = validate_online
+        self.llm_runtime_config = llm_runtime_config or {}
+        self.llm_model = resolve_default_model(
+            llm_model,
+            runtime_config=self.llm_runtime_config,
+        )
         self.llm_adjudicator = llm_adjudicator or LangChainLlmDedupAdjudicator(
-            model=llm_model,
+            model=self.llm_model,
             temperature=llm_temperature,
-            runtime_config=llm_runtime_config,
+            runtime_config=self.llm_runtime_config,
         )
 
     def adjudicate(
