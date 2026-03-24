@@ -86,30 +86,36 @@ class ComponentResolutionService:
         evidence_uri: str | None,
         attack_id: str | None,
         uow: UnitOfWork | None,
+        mention_id: str | None = None,
+        raw_id: str | None = None,
+        evidence_snippet: str | None = None,
+        review_status: str = "accepted",
+        resolver_strategy: str = "llm_primary",
     ) -> dict[str, Any]:
-        """Build a ``BomResolutionDTO``-compatible dict from the LLM decision
-        and optionally persist to the DB (upsert component impact or enqueue).
+        built = self.build_llm_resolution(
+            mention=mention,
+            llm_decision=llm_decision,
+            candidates=candidates,
+        )
+        return self.persist_reviewed_resolution(
+            resolution=built,
+            attack_id=attack_id,
+            uow=uow,
+            mention_id=mention_id,
+            raw_id=raw_id,
+            evidence_uri=evidence_uri,
+            evidence_snippet=evidence_snippet,
+            review_status=review_status,
+            resolver_strategy=resolver_strategy,
+        )
 
-        Parameters
-        ----------
-        mention : dict
-            Original bom_mention.
-        llm_decision : dict
-            Output of ``LangChainLlmBomResolver.resolve()`` or equivalent.
-        candidates : list[dict]
-            Candidate list from ``retrieve_candidates_for_mention``.
-        evidence_uri : str | None
-            URI of the evidence artifact.
-        attack_id : str | None
-            Resolved attack row ID (if available).
-        uow : UnitOfWork | None
-            Active unit-of-work for DB persistence.
-
-        Returns
-        -------
-        dict
-            ``BomResolutionDTO``-shaped dict.
-        """
+    def build_llm_resolution(
+        self,
+        *,
+        mention: dict[str, Any],
+        llm_decision: dict[str, Any],
+        candidates: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         mentioned_name = str(mention.get("mentioned_name", "")).strip()
         mentioned_vendor = mention.get("mentioned_vendor")
         normalized_vendor = normalize_vendor_name(mentioned_vendor)
@@ -173,32 +179,6 @@ class ComponentResolutionService:
         if reasoning:
             reason_codes.append(f"llm_reason:{reasoning[:120]}")
 
-        # DB persistence
-        if resolution_status == "resolved" and selected and attack_id and uow:
-            component_id = self._ensure_component(selected, uow=uow)
-            if component_id is not None:
-                uow.components.upsert_attack_component_impact(
-                    attack_id=attack_id,
-                    component_id=component_id,
-                    version_constraint_raw=mention.get("mentioned_version"),
-                    normalized_constraint=final_version,
-                    match_mode=match_mode or "llm_resolved",
-                    impact_scope="direct",
-                    confidence_score=confidence,
-                    evidence_uri=evidence_uri,
-                )
-                selected["component_id"] = component_id
-        elif resolution_status != "resolved" and attack_id and uow:
-            queue_item = uow.governance.enqueue_bom_resolution(
-                attack_id=attack_id,
-                raw_id=mention.get("raw_id"),
-                mentioned_name=mentioned_name,
-                mentioned_vendor=mentioned_vendor,
-                mentioned_version=mention.get("mentioned_version"),
-                reason_code=self._queue_reason_code(reason_codes),
-            )
-            queue_ref = str(queue_item.queue_id)
-
         return BomResolutionDTO(
             mentioned_name=mentioned_name,
             mentioned_vendor=mentioned_vendor,
@@ -217,6 +197,104 @@ class ComponentResolutionService:
             queue_ref=queue_ref,
             review=None,
         ).model_dump(mode="python")
+
+    def persist_reviewed_resolution(
+        self,
+        *,
+        resolution: dict[str, Any],
+        attack_id: str | None,
+        uow: UnitOfWork | None,
+        mention_id: str | None = None,
+        raw_id: str | None = None,
+        evidence_uri: str | None = None,
+        evidence_snippet: str | None = None,
+        review_status: str = "accepted",
+        resolver_strategy: str = "llm_primary",
+    ) -> dict[str, Any]:
+        final_resolution = deepcopy(resolution)
+        review = dict(final_resolution.get("review") or {})
+        reason_codes = list(final_resolution.get("reason_codes", []) or [])
+        selected = self._resolve_selected_candidate(
+            review.get("component_suggestion") or final_resolution.get("selected_component"),
+            final_resolution.get("candidate_components", []),
+        )
+        queue_ref: str | None = None
+
+        review_decision = str(review.get("decision") or "")
+        if review_decision == "review_queue" and "llm_low_confidence" not in reason_codes:
+            reason_codes.append("llm_low_confidence")
+        if review_decision == "revise" and "reviewer_rejected" not in reason_codes:
+            reason_codes.append("reviewer_rejected")
+        if (
+            final_resolution.get("resolution_status") != "resolved"
+            and selected is None
+            and "missing_evidence" not in reason_codes
+        ):
+            reason_codes.append("missing_evidence")
+
+        if review_decision in {"review_queue", "revise"}:
+            final_resolution["resolution_status"] = "review_queue"
+
+        should_persist_selected = (
+            selected is not None
+            and attack_id is not None
+            and uow is not None
+            and final_resolution.get("resolution_status") in {"resolved", "review_queue"}
+        )
+        should_enqueue_review = (
+            final_resolution.get("resolution_status") != "resolved"
+            or review_status != "accepted"
+        )
+
+        if should_persist_selected:
+            component_id = self._ensure_component(selected, uow=uow)
+            if component_id is not None:
+                uow.components.upsert_attack_component_impact(
+                    attack_id=attack_id,
+                    component_id=component_id,
+                    mention_id=mention_id,
+                    source_raw_id=raw_id,
+                    version_constraint_raw=final_resolution.get("mentioned_version"),
+                    normalized_constraint=final_resolution.get("normalized_version_constraint"),
+                    match_mode=(
+                        final_resolution.get("match_mode")
+                        or selected.get("match_mode")
+                        or "alias"
+                    ),
+                    impact_scope="direct",
+                    review_status=review_status,
+                    resolver_strategy=resolver_strategy,
+                    confidence_score=float(final_resolution.get("match_confidence", 0.0) or 0.0),
+                    evidence_uri=evidence_uri,
+                    evidence_snippet=evidence_snippet,
+                )
+                selected = {**selected, "component_id": component_id}
+        if should_enqueue_review and uow:
+            queue_item = uow.governance.enqueue_bom_resolution(
+                attack_id=attack_id,
+                raw_id=raw_id,
+                mention_id=mention_id,
+                mentioned_name=str(final_resolution.get("mentioned_name", "")),
+                mentioned_vendor=final_resolution.get("mentioned_vendor"),
+                mentioned_version=final_resolution.get("mentioned_version"),
+                reason_code=self._queue_reason_code(reason_codes, review=review),
+                candidate_snapshot={
+                    "resolution": final_resolution,
+                    "selected_component": selected,
+                    "review": review,
+                },
+                reasoning_summary=(
+                    str(review.get("reasons", [""])[:1][0]).strip()
+                    or str(final_resolution.get("reason_codes", [""])[:1][0]).strip()
+                    or None
+                ),
+            )
+            queue_ref = str(queue_item.queue_id)
+
+        final_resolution["selected_component"] = selected
+        final_resolution["reason_codes"] = list(dict.fromkeys(reason_codes))
+        final_resolution["queue_ref"] = queue_ref
+        return BomResolutionDTO.model_validate(final_resolution).model_dump(mode="python")
 
     # ------------------------------------------------------------------
     # Rules-only resolution API (backward-compatible)
@@ -377,22 +455,33 @@ class ComponentResolutionService:
                 uow.components.upsert_attack_component_impact(
                     attack_id=attack_id,
                     component_id=component_id,
+                    mention_id=None,
+                    source_raw_id=mention.get("raw_id"),
                     version_constraint_raw=mention.get("mentioned_version"),
                     normalized_constraint=normalized_version,
                     match_mode=selected["match_mode"],
                     impact_scope="direct",
+                    review_status="accepted",
+                    resolver_strategy="rules_only",
                     confidence_score=float(selected["final_score"]),
                     evidence_uri=evidence_uri,
+                    evidence_snippet=None,
                 )
                 selected["component_id"] = component_id
-        elif resolution_status != "resolved" and attack_id and uow:
+        elif resolution_status != "resolved" and uow:
             queue_item = uow.governance.enqueue_bom_resolution(
                 attack_id=attack_id,
                 raw_id=mention.get("raw_id"),
+                mention_id=None,
                 mentioned_name=mentioned_name,
                 mentioned_vendor=mentioned_vendor,
                 mentioned_version=mention.get("mentioned_version"),
                 reason_code=self._queue_reason_code(reason_codes),
+                candidate_snapshot={
+                    "candidates": candidate_components,
+                    "selected_component": selected,
+                },
+                reasoning_summary="rules_only_resolution",
             )
             queue_ref = str(queue_item.queue_id)
         return BomResolutionDTO(
@@ -663,8 +752,10 @@ class ComponentResolutionService:
         if uow is None:
             return None
         source_metadata = item.get("source_metadata", {})
-        attack_code = source_metadata.get("stable_attack_code") or source_metadata.get(
-            "stable_attack_id"
+        attack_code = (
+            source_metadata.get("stable_attack_code")
+            or source_metadata.get("stable_attack_id")
+            or item.get("attack_code")
         )
         if not attack_code:
             return None
@@ -748,11 +839,62 @@ class ComponentResolutionService:
         }.get(match_mode, 0.8)
         return max(0.0, min(1.0, round(match_score * mode_weight + vendor_score, 4)))
 
-    def _queue_reason_code(self, reason_codes: list[str]) -> str:
+    def _resolve_selected_candidate(
+        self,
+        selected_component: dict[str, Any] | None,
+        candidate_components: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        if selected_component is None:
+            return None
+        selected_code = selected_component.get("component_code")
+        selected_name = selected_component.get("component_name")
+        for candidate in candidate_components:
+            if selected_code and candidate.get("component_code") == selected_code:
+                return candidate
+            if selected_name and candidate.get("component_name") == selected_name:
+                return candidate
+        return selected_component
+
+    def _queue_reason_code(
+        self,
+        reason_codes: list[str],
+        *,
+        review: dict[str, Any] | None = None,
+    ) -> str:
+        review = review or {}
+        lowered_reasons = [str(code).lower() for code in reason_codes]
+        review_text = " ".join(
+            [
+                *[str(item).lower() for item in review.get("reasons", []) or []],
+                *[str(item).lower() for item in review.get("ambiguity_notes", []) or []],
+            ]
+        )
+        if "catalog_gap" in lowered_reasons:
+            return "catalog_gap"
+        if "cross_source_conflict" in lowered_reasons:
+            return "cross_source_conflict"
+        if "layer_conflict" in lowered_reasons:
+            return "layer_conflict"
+        if "version_parse_failed" in lowered_reasons:
+            return "version_parse_failed"
         if not reason_codes:
             return "conflict"
-        if "version_ambiguous" in reason_codes:
+        if "version_ambiguous" in lowered_reasons or "version constraint remains ambiguous" in review_text:
             return "version_ambiguous"
-        if "conflict" in reason_codes:
+        if (
+            "vendor_conflict" in lowered_reasons
+            or "vendor conflict" in review_text
+            or "vendor conflicts" in review_text
+        ):
+            return "vendor_conflict"
+        if "llm_no_match" in lowered_reasons:
+            return "llm_no_match"
+        if "missing_evidence" in lowered_reasons:
+            return "missing_evidence"
+        if "reviewer_rejected" in lowered_reasons or "candidate overlap" in review_text:
+            return "reviewer_rejected"
+        if "llm_low_confidence" in lowered_reasons:
+            return "llm_low_confidence"
+        if "conflict" in lowered_reasons:
             return "conflict"
         return "alias_not_found"

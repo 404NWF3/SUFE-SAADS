@@ -6,6 +6,7 @@ from ..models import (
     SourceQualityDashboardRow,
     UnresolvedBomQueueRow,
     Wp12AttackFeedRow,
+    Wp12AttackExecutionFeedRow,
 )
 from ..unit_of_work import UnitOfWork
 
@@ -53,4 +54,19 @@ class Wp12FeedService:
 
     def refresh_owasp_coverage(self, *, concurrently: bool = False) -> None:
         self.uow.read_models.refresh_mv_owasp_coverage(concurrently=concurrently)
+
+    def get_attack_execution_feed(
+        self,
+        *,
+        active_only: bool = True,
+        published_only: bool = True,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[Wp12AttackExecutionFeedRow]:
+        return self.uow.read_models.list_wp12_attack_execution_feed(
+            active_only=active_only,
+            published_only=published_only,
+            limit=limit,
+            offset=offset,
+        )
 

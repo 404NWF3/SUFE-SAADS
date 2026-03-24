@@ -194,6 +194,31 @@ BEFORE UPDATE ON wp11.attack_entry
 FOR EACH ROW
 EXECUTE FUNCTION wp11.set_updated_at();
 
+ALTER TABLE wp11.attack_entry
+    ADD COLUMN IF NOT EXISTS primary_stix_bundle_id UUID NULL,
+    ADD COLUMN IF NOT EXISTS primary_stix_object_id UUID NULL,
+    ADD COLUMN IF NOT EXISTS stix_graph_status VARCHAR(20) NULL;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'ck_attack_entry_stix_graph_status'
+          AND connamespace = 'wp11'::regnamespace
+    ) THEN
+        ALTER TABLE wp11.attack_entry
+            ADD CONSTRAINT ck_attack_entry_stix_graph_status
+            CHECK (
+                stix_graph_status IS NULL
+                OR stix_graph_status IN ('published','review_queue','draft','failed')
+            );
+    END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_attack_entry_primary_stix_bundle
+    ON wp11.attack_entry (primary_stix_bundle_id);
+
 CREATE TABLE IF NOT EXISTS wp11.attack_cvss_assessment (
     score_id                 BIGSERIAL PRIMARY KEY,
     attack_id                UUID NOT NULL,
@@ -450,6 +475,52 @@ CREATE INDEX IF NOT EXISTS idx_component_alias_component_id
 CREATE INDEX IF NOT EXISTS idx_component_alias_normalized_trgm
     ON wp11.ai_component_alias USING GIN (normalized_alias gin_trgm_ops);
 
+CREATE TABLE IF NOT EXISTS wp11.attack_component_mention (
+    mention_id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    attack_id               UUID NULL,
+    raw_id                  UUID NULL,
+    mentioned_name          VARCHAR(160) NOT NULL,
+    mentioned_vendor        VARCHAR(120) NULL,
+    mentioned_version       VARCHAR(80) NULL,
+    normalized_alias        VARCHAR(160) NOT NULL,
+    normalized_vendor       VARCHAR(120) NULL,
+    component_layer         VARCHAR(40) NULL,
+    impact_scope            VARCHAR(40) NULL,
+    dependency_role         VARCHAR(40) NULL,
+    evidence_snippet        TEXT NULL,
+    extractor_name          VARCHAR(80) NOT NULL,
+    extraction_confidence   NUMERIC(5,4) NOT NULL,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT fk_component_mention_attack
+        FOREIGN KEY (attack_id)
+        REFERENCES wp11.attack_entry (attack_id)
+        ON DELETE SET NULL,
+    CONSTRAINT fk_component_mention_raw
+        FOREIGN KEY (raw_id)
+        REFERENCES wp11.raw_intel_record (raw_id)
+        ON DELETE SET NULL,
+    CONSTRAINT ck_component_mention_confidence
+        CHECK (extraction_confidence >= 0 AND extraction_confidence <= 1),
+    CONSTRAINT ck_component_mention_layer
+        CHECK (
+            component_layer IS NULL
+            OR component_layer IN (
+                'vendor_platform', 'model_family', 'framework', 'plugin', 'runtime', 'vector_stack', 'unknown'
+            )
+        ),
+    CONSTRAINT ck_component_mention_impact_scope
+        CHECK (
+            impact_scope IS NULL
+            OR impact_scope IN ('direct','indirect','runtime','supply_chain')
+        )
+);
+
+CREATE INDEX IF NOT EXISTS idx_component_mention_attack_created_at
+    ON wp11.attack_component_mention (attack_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_component_mention_normalized_alias
+    ON wp11.attack_component_mention (normalized_alias);
+
 CREATE TABLE IF NOT EXISTS wp11.attack_component_impact (
     impact_id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     attack_id                  UUID NOT NULL,
@@ -505,6 +576,51 @@ CREATE INDEX IF NOT EXISTS idx_attack_component_impact_component_mode
 
 CREATE INDEX IF NOT EXISTS idx_attack_component_impact_attack_confidence
     ON wp11.attack_component_impact (attack_id, confidence_score DESC);
+
+ALTER TABLE wp11.attack_component_impact
+    ADD COLUMN IF NOT EXISTS mention_id UUID NULL,
+    ADD COLUMN IF NOT EXISTS source_raw_id UUID NULL,
+    ADD COLUMN IF NOT EXISTS review_status VARCHAR(20) NOT NULL DEFAULT 'accepted',
+    ADD COLUMN IF NOT EXISTS resolver_strategy VARCHAR(40) NULL,
+    ADD COLUMN IF NOT EXISTS evidence_snippet TEXT NULL;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_component_impact_mention'
+          AND connamespace = 'wp11'::regnamespace
+    ) THEN
+        ALTER TABLE wp11.attack_component_impact
+            ADD CONSTRAINT fk_component_impact_mention
+            FOREIGN KEY (mention_id)
+            REFERENCES wp11.attack_component_mention (mention_id)
+            ON DELETE SET NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_component_impact_source_raw'
+          AND connamespace = 'wp11'::regnamespace
+    ) THEN
+        ALTER TABLE wp11.attack_component_impact
+            ADD CONSTRAINT fk_component_impact_source_raw
+            FOREIGN KEY (source_raw_id)
+            REFERENCES wp11.raw_intel_record (raw_id)
+            ON DELETE SET NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'ck_component_impact_review_status'
+          AND connamespace = 'wp11'::regnamespace
+    ) THEN
+        ALTER TABLE wp11.attack_component_impact
+            ADD CONSTRAINT ck_component_impact_review_status
+            CHECK (review_status IN ('accepted','review_queue','rejected'));
+    END IF;
+END $$;
 
 -- =====================================
 -- 4. 治理审计层
@@ -585,6 +701,95 @@ CREATE INDEX IF NOT EXISTS idx_bom_queue_status_created_at
 CREATE INDEX IF NOT EXISTS idx_bom_queue_mentioned_name
     ON wp11.bom_resolution_queue (mentioned_name);
 
+ALTER TABLE wp11.bom_resolution_queue
+    ADD COLUMN IF NOT EXISTS mention_id UUID NULL,
+    ADD COLUMN IF NOT EXISTS candidate_snapshot JSONB NULL,
+    ADD COLUMN IF NOT EXISTS reasoning_summary TEXT NULL;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'ck_bom_queue_reason'
+          AND connamespace = 'wp11'::regnamespace
+    ) THEN
+        ALTER TABLE wp11.bom_resolution_queue
+            DROP CONSTRAINT ck_bom_queue_reason;
+    END IF;
+END $$;
+
+ALTER TABLE wp11.bom_resolution_queue
+    ADD CONSTRAINT ck_bom_queue_reason
+    CHECK (
+        reason_code IN (
+            'alias_not_found',
+            'version_ambiguous',
+            'conflict',
+            'catalog_gap',
+            'vendor_conflict',
+            'layer_conflict',
+            'version_parse_failed',
+            'cross_source_conflict',
+            'llm_no_match',
+            'llm_low_confidence',
+            'missing_evidence',
+            'reviewer_rejected'
+        )
+    );
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_bom_queue_mention'
+          AND connamespace = 'wp11'::regnamespace
+    ) THEN
+        ALTER TABLE wp11.bom_resolution_queue
+            ADD CONSTRAINT fk_bom_queue_mention
+            FOREIGN KEY (mention_id)
+            REFERENCES wp11.attack_component_mention (mention_id)
+            ON DELETE SET NULL;
+    END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS wp11.bom_resolution_audit (
+    audit_id                  BIGSERIAL PRIMARY KEY,
+    mention_id                UUID NULL,
+    attack_id                 UUID NULL,
+    raw_id                    UUID NULL,
+    strategy_requested        VARCHAR(40) NOT NULL,
+    strategy_executed         VARCHAR(40) NOT NULL,
+    llm_model                 VARCHAR(120) NOT NULL,
+    prompt_version            VARCHAR(40) NOT NULL,
+    llm_decision              VARCHAR(20) NOT NULL,
+    llm_confidence            NUMERIC(5,4) NOT NULL,
+    selected_component_code   VARCHAR(40) NULL,
+    reasoning_summary         TEXT NOT NULL,
+    reasoning_trace           JSONB NULL,
+    candidate_count           INTEGER NOT NULL DEFAULT 0,
+    evidence_quotes           JSONB NULL,
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT fk_bom_audit_mention
+        FOREIGN KEY (mention_id)
+        REFERENCES wp11.attack_component_mention (mention_id)
+        ON DELETE SET NULL,
+    CONSTRAINT fk_bom_audit_attack
+        FOREIGN KEY (attack_id)
+        REFERENCES wp11.attack_entry (attack_id)
+        ON DELETE SET NULL,
+    CONSTRAINT fk_bom_audit_raw
+        FOREIGN KEY (raw_id)
+        REFERENCES wp11.raw_intel_record (raw_id)
+        ON DELETE SET NULL,
+    CONSTRAINT ck_bom_audit_confidence
+        CHECK (llm_confidence >= 0 AND llm_confidence <= 1)
+);
+
+CREATE INDEX IF NOT EXISTS idx_bom_audit_attack_created_at
+    ON wp11.bom_resolution_audit (attack_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS wp11.query_feedback_log (
     feedback_id          BIGSERIAL PRIMARY KEY,
     run_id               VARCHAR(64) NOT NULL,
@@ -618,8 +823,224 @@ CREATE TABLE IF NOT EXISTS wp11.query_feedback_log (
 CREATE INDEX IF NOT EXISTS idx_query_feedback_run_id
     ON wp11.query_feedback_log (run_id, created_at DESC);
 
+-- =====================================
+-- 5. STIX 2.1 规范化图模型
+-- =====================================
+CREATE TABLE IF NOT EXISTS wp11.stix_bundle (
+    bundle_id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    attack_id                 UUID NULL,
+    bundle_stix_id            VARCHAR(80) NOT NULL UNIQUE,
+    spec_version              VARCHAR(10) NOT NULL DEFAULT '2.1',
+    bundle_role               VARCHAR(30) NOT NULL DEFAULT 'attack_graph',
+    graph_confidence          NUMERIC(5,4) NULL,
+    review_status             VARCHAR(20) NOT NULL DEFAULT 'draft',
+    primary_object_stix_id    VARCHAR(80) NULL,
+    bundle_payload            JSONB NOT NULL,
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT fk_stix_bundle_attack
+        FOREIGN KEY (attack_id)
+        REFERENCES wp11.attack_entry (attack_id)
+        ON DELETE SET NULL,
+    CONSTRAINT ck_stix_bundle_confidence
+        CHECK (graph_confidence IS NULL OR (graph_confidence >= 0 AND graph_confidence <= 1)),
+    CONSTRAINT ck_stix_bundle_review_status
+        CHECK (review_status IN ('published','review_queue','draft','failed'))
+);
+
+CREATE TRIGGER trg_stix_bundle_set_updated_at
+BEFORE UPDATE ON wp11.stix_bundle
+FOR EACH ROW
+EXECUTE FUNCTION wp11.set_updated_at();
+
+CREATE TABLE IF NOT EXISTS wp11.stix_object (
+    object_pk                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bundle_id                 UUID NOT NULL,
+    attack_id                 UUID NULL,
+    stix_id                   VARCHAR(80) NOT NULL,
+    object_type               VARCHAR(40) NOT NULL,
+    spec_version              VARCHAR(10) NOT NULL DEFAULT '2.1',
+    name                      TEXT NULL,
+    description               TEXT NULL,
+    created_ts                TIMESTAMPTZ NULL,
+    modified_ts               TIMESTAMPTZ NULL,
+    revoked                   BOOLEAN NOT NULL DEFAULT FALSE,
+    confidence                NUMERIC(5,4) NULL,
+    lang                      VARCHAR(20) NULL,
+    is_primary                BOOLEAN NOT NULL DEFAULT FALSE,
+    raw_payload               JSONB NOT NULL,
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT fk_stix_object_bundle
+        FOREIGN KEY (bundle_id)
+        REFERENCES wp11.stix_bundle (bundle_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_stix_object_attack
+        FOREIGN KEY (attack_id)
+        REFERENCES wp11.attack_entry (attack_id)
+        ON DELETE SET NULL,
+    CONSTRAINT uq_stix_object_bundle_stix_id
+        UNIQUE (bundle_id, stix_id),
+    CONSTRAINT ck_stix_object_confidence
+        CHECK (confidence IS NULL OR (confidence >= 0 AND confidence <= 1))
+);
+
+CREATE TRIGGER trg_stix_object_set_updated_at
+BEFORE UPDATE ON wp11.stix_object
+FOR EACH ROW
+EXECUTE FUNCTION wp11.set_updated_at();
+
+CREATE INDEX IF NOT EXISTS idx_stix_object_type_name
+    ON wp11.stix_object (object_type, name);
+
+CREATE TABLE IF NOT EXISTS wp11.stix_relationship_projection (
+    relationship_pk           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    object_pk                 UUID NOT NULL,
+    bundle_id                 UUID NOT NULL,
+    relationship_type         VARCHAR(40) NOT NULL,
+    source_ref                VARCHAR(80) NOT NULL,
+    target_ref                VARCHAR(80) NOT NULL,
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT fk_stix_relationship_object
+        FOREIGN KEY (object_pk)
+        REFERENCES wp11.stix_object (object_pk)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_stix_relationship_bundle
+        FOREIGN KEY (bundle_id)
+        REFERENCES wp11.stix_bundle (bundle_id)
+        ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS wp11.stix_external_reference (
+    ext_ref_id                BIGSERIAL PRIMARY KEY,
+    object_pk                 UUID NOT NULL,
+    source_name               VARCHAR(120) NOT NULL,
+    external_id               VARCHAR(120) NULL,
+    url                       TEXT NULL,
+    description               TEXT NULL,
+    CONSTRAINT fk_stix_external_ref_object
+        FOREIGN KEY (object_pk)
+        REFERENCES wp11.stix_object (object_pk)
+        ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS wp11.stix_kill_chain_phase (
+    phase_id                  BIGSERIAL PRIMARY KEY,
+    object_pk                 UUID NOT NULL,
+    kill_chain_name           VARCHAR(80) NOT NULL,
+    phase_name                VARCHAR(80) NOT NULL,
+    CONSTRAINT fk_stix_phase_object
+        FOREIGN KEY (object_pk)
+        REFERENCES wp11.stix_object (object_pk)
+        ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS wp11.stix_object_label (
+    object_pk                 UUID NOT NULL,
+    label                     VARCHAR(80) NOT NULL,
+    PRIMARY KEY (object_pk, label),
+    CONSTRAINT fk_stix_label_object
+        FOREIGN KEY (object_pk)
+        REFERENCES wp11.stix_object (object_pk)
+        ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS wp11.stix_object_alias (
+    object_pk                 UUID NOT NULL,
+    alias                     VARCHAR(160) NOT NULL,
+    PRIMARY KEY (object_pk, alias),
+    CONSTRAINT fk_stix_alias_object
+        FOREIGN KEY (object_pk)
+        REFERENCES wp11.stix_object (object_pk)
+        ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS wp11.attack_stix_binding (
+    binding_id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    attack_id                 UUID NOT NULL UNIQUE,
+    active_bundle_id          UUID NOT NULL,
+    primary_object_pk         UUID NOT NULL,
+    publication_status        VARCHAR(20) NOT NULL DEFAULT 'review_queue',
+    published_at              TIMESTAMPTZ NULL,
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT fk_attack_stix_binding_attack
+        FOREIGN KEY (attack_id)
+        REFERENCES wp11.attack_entry (attack_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_attack_stix_binding_bundle
+        FOREIGN KEY (active_bundle_id)
+        REFERENCES wp11.stix_bundle (bundle_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_attack_stix_binding_object
+        FOREIGN KEY (primary_object_pk)
+        REFERENCES wp11.stix_object (object_pk)
+        ON DELETE CASCADE,
+    CONSTRAINT ck_attack_stix_binding_status
+        CHECK (publication_status IN ('published','review_queue','draft'))
+);
+
+CREATE TRIGGER trg_attack_stix_binding_set_updated_at
+BEFORE UPDATE ON wp11.attack_stix_binding
+FOR EACH ROW
+EXECUTE FUNCTION wp11.set_updated_at();
+
+CREATE TABLE IF NOT EXISTS wp11.stix_review_queue (
+    review_id                 BIGSERIAL PRIMARY KEY,
+    attack_id                 UUID NULL,
+    bundle_id                 UUID NULL,
+    reason_code               VARCHAR(40) NOT NULL,
+    queue_status              VARCHAR(20) NOT NULL DEFAULT 'open',
+    review_payload            JSONB NULL,
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    resolved_at               TIMESTAMPTZ NULL,
+    CONSTRAINT fk_stix_review_attack
+        FOREIGN KEY (attack_id)
+        REFERENCES wp11.attack_entry (attack_id)
+        ON DELETE SET NULL,
+    CONSTRAINT fk_stix_review_bundle
+        FOREIGN KEY (bundle_id)
+        REFERENCES wp11.stix_bundle (bundle_id)
+        ON DELETE SET NULL,
+    CONSTRAINT ck_stix_review_status
+        CHECK (queue_status IN ('open','resolved','rejected'))
+);
+
+CREATE TABLE IF NOT EXISTS wp11.stix_extraction_audit (
+    audit_id                  BIGSERIAL PRIMARY KEY,
+    attack_id                 UUID NULL,
+    bundle_id                 UUID NULL,
+    extractor_model           VARCHAR(120) NOT NULL,
+    reviewer_model            VARCHAR(120) NULL,
+    prompt_version            VARCHAR(40) NOT NULL,
+    review_decision           VARCHAR(20) NOT NULL,
+    graph_confidence          NUMERIC(5,4) NULL,
+    reasoning_summary         TEXT NOT NULL,
+    reasoning_trace           JSONB NULL,
+    finding_count             INTEGER NOT NULL DEFAULT 0,
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT fk_stix_audit_attack
+        FOREIGN KEY (attack_id)
+        REFERENCES wp11.attack_entry (attack_id)
+        ON DELETE SET NULL,
+    CONSTRAINT fk_stix_audit_bundle
+        FOREIGN KEY (bundle_id)
+        REFERENCES wp11.stix_bundle (bundle_id)
+        ON DELETE SET NULL,
+    CONSTRAINT ck_stix_audit_confidence
+        CHECK (graph_confidence IS NULL OR (graph_confidence >= 0 AND graph_confidence <= 1)),
+    CONSTRAINT ck_stix_audit_review_decision
+        CHECK (review_decision IN ('accept','review_queue'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_query_feedback_source_intent
     ON wp11.query_feedback_log (source_name, query_intent, created_at DESC);
+
+ALTER TABLE wp11.bom_resolution_audit
+    ADD COLUMN IF NOT EXISTS reasoning_trace JSONB NULL;
+
+ALTER TABLE wp11.stix_extraction_audit
+    ADD COLUMN IF NOT EXISTS reasoning_trace JSONB NULL;
 
 COMMENT ON TABLE wp11.query_feedback_log IS '查询反馈历史持久化，跨 run 积累，支持自适应查询调整';
 
@@ -708,6 +1129,37 @@ LEFT JOIN wp11.attack_seed_asset asa
     ON asa.attack_id = ae.attack_id
    AND asa.qa_status IN ('reviewed','published')
 WHERE ae.entry_status = 'active';
+
+CREATE OR REPLACE VIEW wp11.v_wp12_attack_execution_feed AS
+SELECT
+    ae.attack_id,
+    ae.attack_code,
+    ae.canonical_name,
+    ae.attack_family,
+    ae.severity_level,
+    ae.summary,
+    ac.component_id,
+    ac.component_name,
+    aci.normalized_constraint,
+    aci.impact_scope AS component_impact_scope,
+    ae.primary_stix_bundle_id,
+    ae.primary_stix_object_id,
+    ae.stix_graph_status,
+    sb.primary_object_stix_id AS primary_attack_pattern_stix_id,
+    sb.bundle_payload AS stix_bundle_payload
+FROM wp11.attack_entry ae
+LEFT JOIN wp11.attack_component_impact aci
+    ON aci.attack_id = ae.attack_id
+   AND aci.review_status = 'accepted'
+LEFT JOIN wp11.ai_component ac
+    ON ac.component_id = aci.component_id
+LEFT JOIN wp11.stix_bundle sb
+    ON sb.bundle_id = ae.primary_stix_bundle_id
+WHERE ae.entry_status = 'active'
+  AND (
+      ae.stix_graph_status = 'published'
+      OR ae.stix_graph_status IS NULL
+  );
 
 CREATE OR REPLACE VIEW wp11.v_component_risk_overview AS
 SELECT
@@ -819,3 +1271,7 @@ COMMENT ON VIEW wp11.v_component_risk_overview IS '按 AI BOM 组件聚合的风
 COMMENT ON VIEW wp11.v_unresolved_bom_queue IS '未解析 AI BOM 组件复核队列';
 COMMENT ON VIEW wp11.v_source_quality_dashboard IS '采集来源质量看板';
 COMMENT ON MATERIALIZED VIEW wp11.mv_owasp_coverage IS '按 OWASP LLM 分类预聚合的攻击覆盖率与暴露面统计';
+COMMENT ON TABLE wp11.attack_component_mention IS 'AI BOM mention extraction table';
+COMMENT ON TABLE wp11.stix_bundle IS 'STIX 2.1 bundle source-of-truth table';
+COMMENT ON TABLE wp11.stix_object IS 'STIX 2.1 object table with normalized projections and raw payload';
+COMMENT ON VIEW wp11.v_wp12_attack_execution_feed IS 'Execution-oriented WP1-2 feed with published STIX graph and accepted AI BOM impacts';

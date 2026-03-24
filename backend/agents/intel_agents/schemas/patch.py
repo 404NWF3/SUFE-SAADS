@@ -33,6 +33,7 @@ class GraphNodePatchDTO(BaseModel):
     standardized_items: list[dict[str, Any]] | None = None
     llm_standardization_audits: list[dict[str, Any]] | None = None
     llm_bom_resolution_audits: list[dict[str, Any]] | None = None
+    stix_bundle_refs: list[dict[str, Any]] | None = None
     llm_dedup_judgments: list[dict[str, Any]] | None = None
     dedup_decisions: list[dict[str, Any]] | None = None
     stable_attack_records: list[dict[str, Any]] | None = None

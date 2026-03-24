@@ -6,9 +6,29 @@ from .attack import (
     AttackTaxonomyMap,
     RemediationAdvice,
 )
-from .component import AiComponent, AiComponentAlias, AttackComponentImpact
-from .governance import BomResolutionQueueItem, DedupAudit, QueryFeedbackLog
+from .component import (
+    AiComponent,
+    AiComponentAlias,
+    AttackComponentImpact,
+    AttackComponentMention,
+)
+from .governance import (
+    BomResolutionAudit,
+    BomResolutionQueueItem,
+    DedupAudit,
+    QueryFeedbackLog,
+)
 from .source import CollectionTask, IntelSource, RawIntelRecord, SourceType
+from .stix import (
+    AttackStixBinding,
+    StixBundle,
+    StixExternalReference,
+    StixExtractionAudit,
+    StixKillChainPhase,
+    StixObject,
+    StixRelationshipProjection,
+    StixReviewQueueItem,
+)
 from .views import (
     ComponentRiskOverviewRow,
     OwaspCoverageRow,
@@ -16,6 +36,7 @@ from .views import (
     SourceQualityDashboardRow,
     UnresolvedBomQueueRow,
     Wp12AttackFeedRow,
+    Wp12AttackExecutionFeedRow,
 )
 
 __all__ = [
@@ -32,11 +53,22 @@ __all__ = [
     "AiComponent",
     "AiComponentAlias",
     "AttackComponentImpact",
+    "AttackComponentMention",
     "DedupAudit",
     "BomResolutionQueueItem",
+    "BomResolutionAudit",
     "QueryFeedbackLog",
+    "StixBundle",
+    "StixObject",
+    "StixRelationshipProjection",
+    "StixExternalReference",
+    "StixKillChainPhase",
+    "AttackStixBinding",
+    "StixReviewQueueItem",
+    "StixExtractionAudit",
     "PrimaryCvssView",
     "Wp12AttackFeedRow",
+    "Wp12AttackExecutionFeedRow",
     "ComponentRiskOverviewRow",
     "UnresolvedBomQueueRow",
     "SourceQualityDashboardRow",

@@ -17,6 +17,16 @@ FROM wp11.v_wp12_attack_feed
 WHERE 1 = 1
 """
 
+LIST_WP12_ATTACK_EXECUTION_FEED_BASE = """
+SELECT
+    attack_id, attack_code, canonical_name, attack_family, severity_level, summary,
+    component_id, component_name, normalized_constraint, component_impact_scope,
+    primary_stix_bundle_id, primary_stix_object_id, stix_graph_status,
+    primary_attack_pattern_stix_id, stix_bundle_payload
+FROM wp11.v_wp12_attack_execution_feed
+WHERE 1 = 1
+"""
+
 LIST_COMPONENT_RISK_OVERVIEW_BASE = """
 SELECT
     component_id, component_code, component_name, vendor_name, component_type, attack_count,

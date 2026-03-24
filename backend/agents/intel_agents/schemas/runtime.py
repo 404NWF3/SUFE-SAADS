@@ -29,6 +29,9 @@ CoverageStrategyValue: TypeAlias = Literal[
 BomResolutionStrategyValue: TypeAlias = Literal[
     "rules_only", "llm_optional", "llm_required", "rules_only_degraded"
 ]
+StixStrategyValue: TypeAlias = Literal[
+    "disabled", "llm_optional", "llm_required", "rules_only_degraded"
+]
 DedupMergeStrategyValue: TypeAlias = Literal[
     "rules_only", "llm_optional", "llm_required", "rules_only_degraded"
 ]
@@ -71,6 +74,7 @@ class RuntimeContextDTO(_StrictModel):
     reflection_strategy: ReflectionStrategyValue = "llm_required"
     standardization_strategy: StandardizationStrategyValue = "llm_required"
     bom_resolution_strategy: BomResolutionStrategyValue = "llm_required"
+    stix_strategy: StixStrategyValue = "llm_required"
     dedup_merge_strategy: DedupMergeStrategyValue = "llm_required"
     dedup_adjudication_strategy: DedupAdjudicationStrategyValue = "rules_only"
     llm_model: str = Field(default_factory=_default_runtime_llm_model, min_length=1)
@@ -86,6 +90,9 @@ class RuntimeContextDTO(_StrictModel):
     )
     llm_resume_on_exhausted_retry: bool = True
     standardization_max_concurrency: int = Field(default=2, ge=1, le=32)
+    stix_auto_publish_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    bom_auto_publish_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    review_queue_threshold: float = Field(default=0.60, ge=0.0, le=1.0)
     planning_max_parallel_sources: int | None = Field(default=None, ge=1, le=8)
     planning_max_items_per_source: int | None = Field(default=None, ge=1, le=100)
     planning_max_reflection_rounds: int | None = Field(default=None, ge=0, le=3)
@@ -185,6 +192,7 @@ class RuntimeContextDTO(_StrictModel):
                 "reflection_strategy": "llm_required",
                 "standardization_strategy": "llm_required",
                 "bom_resolution_strategy": "llm_required",
+                "stix_strategy": "llm_required",
                 "dedup_merge_strategy": "llm_required",
                 "dedup_adjudication_strategy": "rules_only",
                 "llm_model": model,
@@ -198,6 +206,9 @@ class RuntimeContextDTO(_StrictModel):
                 "llm_short_wait_threshold_seconds": 60.0,
                 "llm_resume_on_exhausted_retry": True,
                 "standardization_max_concurrency": standardization_default_concurrency,
+                "stix_auto_publish_threshold": 0.85,
+                "bom_auto_publish_threshold": 0.85,
+                "review_queue_threshold": 0.60,
                 "planning_max_parallel_sources": 4,
                 "planning_max_items_per_source": 10,
                 "planning_max_reflection_rounds": 1,
@@ -297,6 +308,7 @@ class RuntimeContextDTO(_StrictModel):
                 "reflection_strategy": "rules_only",  # stub mode; production default is llm_required
                 "standardization_strategy": "rules_only",  # stub mode; production default is llm_required
                 "bom_resolution_strategy": "rules_only",  # stub mode; production default is llm_required
+                "stix_strategy": "disabled",
                 "dedup_merge_strategy": "rules_only",  # stub mode; production default is llm_required
                 "dedup_adjudication_strategy": "rules_only",
                 "llm_model": _default_runtime_llm_model(),
@@ -310,6 +322,9 @@ class RuntimeContextDTO(_StrictModel):
                 "llm_short_wait_threshold_seconds": 15.0,
                 "llm_resume_on_exhausted_retry": True,
                 "standardization_max_concurrency": 2,
+                "stix_auto_publish_threshold": 0.85,
+                "bom_auto_publish_threshold": 0.85,
+                "review_queue_threshold": 0.60,
                 "planning_max_parallel_sources": 4,
                 "planning_max_items_per_source": 10,
                 "planning_max_reflection_rounds": 1,

@@ -7,6 +7,7 @@ from ..models import (
     SourceQualityDashboardRow,
     UnresolvedBomQueueRow,
     Wp12AttackFeedRow,
+    Wp12AttackExecutionFeedRow,
 )
 from ..sql import read_model_queries as q
 from .base import BaseRepository
@@ -69,6 +70,26 @@ class ReadModelRepository(BaseRepository):
 
         rows = self._fetch_all(query, params)
         return [ComponentRiskOverviewRow(**row) for row in rows]
+
+    def list_wp12_attack_execution_feed(
+        self,
+        *,
+        active_only: bool = True,
+        published_only: bool = True,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[Wp12AttackExecutionFeedRow]:
+        query = q.LIST_WP12_ATTACK_EXECUTION_FEED_BASE
+        params: dict[str, object] = {}
+        if active_only:
+            query += " AND stix_graph_status IS NOT NULL"
+        if published_only:
+            query += " AND stix_graph_status = 'published'"
+        query += " ORDER BY attack_code ASC LIMIT %(limit)s OFFSET %(offset)s"
+        params["limit"] = limit
+        params["offset"] = offset
+        rows = self._fetch_all(query, params)
+        return [Wp12AttackExecutionFeedRow(**row) for row in rows]
 
     def list_unresolved_bom_queue(self, limit: int = 100) -> list[UnresolvedBomQueueRow]:
         rows = self._fetch_all(q.LIST_UNRESOLVED_BOM_QUEUE, {"limit": limit})

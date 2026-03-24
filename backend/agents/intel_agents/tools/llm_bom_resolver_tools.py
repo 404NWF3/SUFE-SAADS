@@ -13,24 +13,14 @@ from .llm_client_factory import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Prompt version -- bump when system message or schema changes meaningfully
-# ---------------------------------------------------------------------------
-PROMPT_VERSION = "v1.0-llm-bom-resolver"
+PROMPT_VERSION = "v1.1-llm-bom-resolver"
 
 
 class _StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-# ---------------------------------------------------------------------------
-# Structured output sub-models (LLM returns these)
-# ---------------------------------------------------------------------------
-
-
 class LlmSelectedComponent(_StrictModel):
-    """The component selected by the LLM from the candidate list."""
-
     component_code: str | None = None
     component_name: str = Field(min_length=1)
     component_layer: Literal[
@@ -46,17 +36,6 @@ class LlmSelectedComponent(_StrictModel):
 
 
 class LlmBomResolutionResult(_StrictModel):
-    """Full structured output schema for LLM BOM resolution.
-
-    The LLM receives a bom_mention, attack context, and top-k candidates from
-    the retrieval layer.  It must select the best candidate, determine the
-    version constraint, and provide evidence and reasoning.
-
-    If no candidate is a good match, set ``decision`` to ``"no_match"`` and
-    ``selected_component`` to null.  If confidence is low, set ``decision``
-    to ``"review_queue"``.
-    """
-
     selected_component: LlmSelectedComponent | None = None
     version_constraint_raw: str | None = None
     normalized_version_constraint: str | None = None
@@ -64,85 +43,73 @@ class LlmBomResolutionResult(_StrictModel):
     confidence: float = Field(ge=0.0, le=1.0)
     evidence_quotes: list[str] = Field(default_factory=list)
     reasoning_summary: str = Field(min_length=1)
+    reasoning_trace: list[str] = Field(default_factory=list)
     candidate_ranking: list[str] = Field(
         default_factory=list,
         description="Ordered list of candidate component_codes considered, best first.",
     )
 
 
-# ---------------------------------------------------------------------------
-# System prompt -- v1.0 LLM BOM resolver
-# ---------------------------------------------------------------------------
-
 _SYSTEM_PROMPT = """\
-你是 AI/ML 安全 BOM (Bill of Materials) 解析专家。你的任务是将攻击报告中提到的\
-软件/模型/框架/平台名称映射到标准化的组件目录。
+You are the primary AI BOM resolver for a security-intelligence pipeline.
 
-## 核心原则
-1. **基于证据选择**：从候选列表中选择最匹配的组件，必须基于原文中的证据。
-2. **不要猜测**：如果候选列表中没有合适的组件，decision 设为 "no_match"。
-3. **版本约束**：如果原文提到了版本信息，提取并标准化版本约束。
-4. **component_layer 准确性**：根据候选组件信息和原文上下文，确认 component_layer。
-5. **置信度**：
-   - >= 0.85: 明确的精确或别名匹配，decision 设为 "accept"
-   - 0.60 ~ 0.85: 有合理匹配但需人工确认，decision 设为 "review_queue"
-   - < 0.60 或无合适候选: decision 设为 "no_match"
-6. **evidence_quotes 必须提供**：引用原文中支持你选择的文本片段。
+Your task is to map one attacked AI/ML component mention to the best component
+candidate from a controlled catalog.
 
-## 候选选择策略
-- 如果 mention 名称和候选名称完全一致或是已知别名 → 高置信度 accept
-- 如果 mention 含有厂商信息，优先选择厂商匹配的候选
-- 如果多个候选评分接近（差距 < 0.05），选择 review_queue
-- 如果 mention 是模糊名称（如 "AI agent", "LLM framework"），选择 review_queue 或 no_match
-- trigram/embedding 匹配需要更高阈值才能 accept
+Think carefully before answering, but do not expose hidden chain-of-thought.
+Instead, express your reasoning through:
+- a concise `reasoning_summary`
+- a short visible `reasoning_trace` with 3-5 grounded steps
+- grounded `evidence_quotes`
+- a calibrated `decision`
 
-## 版本标准化规则
-- "before X.Y.Z" / "prior to X.Y.Z" → "<X.Y.Z"
-- "up to X.Y.Z" / "through X.Y.Z" → "<=X.Y.Z"
-- "after X.Y.Z" / "later than X.Y.Z" → ">X.Y.Z"
-- "from X.Y.Z" / "at least X.Y.Z" → ">=X.Y.Z"
-- "fixed in X.Y.Z" / "patched in X.Y.Z" → ">=X.Y.Z"
-- 纯版本号 → "==X.Y.Z"
+Core rules:
+1. Evidence first. Select a component only when the evidence text supports it.
+2. No guessing. If the candidates do not support a reliable match, use `no_match`.
+3. Treat vendor mismatch as a major risk.
+4. Extract and normalize version constraints only when the evidence supports them.
+5. Prefer exact or alias matches over fuzzy matches when the evidence is otherwise similar.
+6. If the top candidates are close or the mention is vague, use `review_queue`.
+7. `candidate_ranking` must reflect the candidates you actually considered.
+8. `evidence_quotes` must be short excerpts from the provided evidence text.
+9. `reasoning_trace` must be explicit, concise, and evidence-grounded.
+10. Do not include hidden reasoning, only visible audit-safe steps.
 
-只输出 JSON 格式的结构化字段，不输出额外解释。"""
+Decision rubric:
+- `accept`: clear evidence, credible candidate, no major ambiguity
+- `review_queue`: some support exists, but ambiguity or conflict remains
+- `no_match`: no candidate is reliably supported
+
+Version normalization:
+- before / prior to X.Y.Z -> <X.Y.Z
+- up to / through X.Y.Z -> <=X.Y.Z
+- after / later than X.Y.Z -> >X.Y.Z
+- at least / from X.Y.Z -> >=X.Y.Z
+- plain version X.Y.Z -> ==X.Y.Z
+
+Return structured JSON only.
+"""
 
 _USER_TEMPLATE = """\
-## 攻击上下文
 attack_name: {attack_name}
 attack_family: {attack_family}
 attack_summary: {attack_summary}
 
-## 当前 BOM mention
-mentioned_name: {mentioned_name}
-mentioned_vendor: {mentioned_vendor}
-mentioned_version: {mentioned_version}
-component_layer_hint: {component_layer_hint}
+current_mention:
+- mentioned_name: {mentioned_name}
+- mentioned_vendor: {mentioned_vendor}
+- mentioned_version: {mentioned_version}
+- component_layer_hint: {component_layer_hint}
 
-## 候选组件列表 (按检索评分降序)
+candidate_list:
 {candidate_list}
 
-## 原文片段 (截取)
+evidence_text:
 {evidence_text}
 """
 
 
-# ---------------------------------------------------------------------------
-# LangChain LLM BOM Resolver
-# ---------------------------------------------------------------------------
-
-
 class LangChainLlmBomResolver:
-    """LLM-primary BOM resolver for Phase 5.
-
-    This receives retrieval candidates from ``ComponentResolutionService`` and
-    uses the LLM to make the final selection/rejection decision.  The LLM sees
-    the attack context, bom_mention details, and the top-k candidate list with
-    scores, aliases, and layers.
-
-    Callers should check ``is_available()`` and decide whether to fall back
-    to rule-based resolution.
-    """
-
     PROMPT_VERSION: str = PROMPT_VERSION
 
     def __init__(
@@ -184,21 +151,6 @@ class LangChainLlmBomResolver:
             )
 
     def resolve(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Run the LLM BOM resolution.
-
-        Parameters
-        ----------
-        payload : dict
-            Must contain keys: attack_name, attack_family, attack_summary,
-            mentioned_name, mentioned_vendor, mentioned_version,
-            component_layer_hint, candidate_list (formatted string),
-            evidence_text.
-
-        Returns
-        -------
-        dict
-            Validated ``LlmBomResolutionResult`` dumped as a dict.
-        """
         if not self.is_available():
             raise RuntimeError(
                 "LLM BOM resolution requested but OPENAI_API_KEY is not configured."
@@ -243,8 +195,6 @@ class LangChainLlmBomResolver:
 
     @staticmethod
     def format_candidate_list(candidates: list[dict[str, Any]]) -> str:
-        """Format a list of BomCandidateDTO dicts into a readable string for
-        the LLM prompt."""
         if not candidates:
             return "(no candidates retrieved)"
         lines: list[str] = []

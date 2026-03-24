@@ -20,20 +20,22 @@ LIMIT %(limit)s
 
 ENQUEUE_BOM_RESOLUTION = """
 INSERT INTO wp11.bom_resolution_queue (
-    attack_id, raw_id, mentioned_name, mentioned_vendor, mentioned_version, reason_code, queue_status
+    attack_id, raw_id, mention_id, mentioned_name, mentioned_vendor, mentioned_version,
+    reason_code, queue_status, candidate_snapshot, reasoning_summary
 )
 VALUES (
-    %(attack_id)s, %(raw_id)s, %(mentioned_name)s, %(mentioned_vendor)s, %(mentioned_version)s, %(reason_code)s, 'open'
+    %(attack_id)s, %(raw_id)s, %(mention_id)s, %(mentioned_name)s, %(mentioned_vendor)s, %(mentioned_version)s,
+    %(reason_code)s, 'open', %(candidate_snapshot)s, %(reasoning_summary)s
 )
 RETURNING
-    queue_id, attack_id, raw_id, mentioned_name, mentioned_vendor, mentioned_version, reason_code,
-    queue_status, resolved_component_id, created_at, resolved_at
+    queue_id, attack_id, raw_id, mention_id, mentioned_name, mentioned_vendor, mentioned_version, reason_code,
+    queue_status, resolved_component_id, candidate_snapshot, reasoning_summary, created_at, resolved_at
 """
 
 LIST_OPEN_BOM_QUEUE = """
 SELECT
-    queue_id, attack_id, raw_id, mentioned_name, mentioned_vendor, mentioned_version, reason_code,
-    queue_status, resolved_component_id, created_at, resolved_at
+    queue_id, attack_id, raw_id, mention_id, mentioned_name, mentioned_vendor, mentioned_version, reason_code,
+    queue_status, resolved_component_id, candidate_snapshot, reasoning_summary, created_at, resolved_at
 FROM wp11.bom_resolution_queue
 WHERE queue_status = 'open'
 ORDER BY created_at DESC
@@ -45,8 +47,8 @@ UPDATE wp11.bom_resolution_queue
 SET queue_status = 'resolved', resolved_component_id = %(resolved_component_id)s, resolved_at = now()
 WHERE queue_id = %(queue_id)s
 RETURNING
-    queue_id, attack_id, raw_id, mentioned_name, mentioned_vendor, mentioned_version, reason_code,
-    queue_status, resolved_component_id, created_at, resolved_at
+    queue_id, attack_id, raw_id, mention_id, mentioned_name, mentioned_vendor, mentioned_version, reason_code,
+    queue_status, resolved_component_id, candidate_snapshot, reasoning_summary, created_at, resolved_at
 """
 
 REJECT_BOM_QUEUE_ITEM = """
@@ -54,8 +56,25 @@ UPDATE wp11.bom_resolution_queue
 SET queue_status = 'rejected', resolved_at = NULL, resolved_component_id = NULL
 WHERE queue_id = %(queue_id)s
 RETURNING
-    queue_id, attack_id, raw_id, mentioned_name, mentioned_vendor, mentioned_version, reason_code,
-    queue_status, resolved_component_id, created_at, resolved_at
+    queue_id, attack_id, raw_id, mention_id, mentioned_name, mentioned_vendor, mentioned_version, reason_code,
+    queue_status, resolved_component_id, candidate_snapshot, reasoning_summary, created_at, resolved_at
+"""
+
+INSERT_BOM_RESOLUTION_AUDIT = """
+INSERT INTO wp11.bom_resolution_audit (
+    mention_id, attack_id, raw_id, strategy_requested, strategy_executed, llm_model,
+    prompt_version, llm_decision, llm_confidence, selected_component_code, reasoning_summary, reasoning_trace,
+    candidate_count, evidence_quotes
+)
+VALUES (
+    %(mention_id)s, %(attack_id)s, %(raw_id)s, %(strategy_requested)s, %(strategy_executed)s, %(llm_model)s,
+    %(prompt_version)s, %(llm_decision)s, %(llm_confidence)s, %(selected_component_code)s, %(reasoning_summary)s, %(reasoning_trace)s,
+    %(candidate_count)s, %(evidence_quotes)s
+)
+RETURNING
+    audit_id, mention_id, attack_id, raw_id, strategy_requested, strategy_executed, llm_model,
+    prompt_version, llm_decision, llm_confidence, selected_component_code, reasoning_summary, reasoning_trace,
+    candidate_count, evidence_quotes, created_at
 """
 
 INSERT_QUERY_FEEDBACK_BATCH = """

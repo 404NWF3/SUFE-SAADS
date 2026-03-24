@@ -36,6 +36,7 @@ from ..services.query_feedback_memory import QueryFeedbackMemoryService
 from ..services.raw_ingest_flow import RawIngestFlow
 from ..services.source_health_service import SourceHealthService
 from ..tools.llm_client_factory import LlmInvocationError
+from .subgraphs import run_ai_bom_subgraph, run_stix_subgraph
 
 
 def _utcnow() -> str:
@@ -62,6 +63,7 @@ def _with_state_defaults(state: dict[str, Any]) -> dict[str, Any]:
     cloned.setdefault("standardized_items", [])
     cloned.setdefault("llm_standardization_audits", [])
     cloned.setdefault("llm_bom_resolution_audits", [])
+    cloned.setdefault("stix_bundle_refs", [])
     cloned.setdefault("llm_dedup_judgments", [])
     cloned.setdefault("dedup_decisions", [])
     cloned.setdefault("dedup_persist_summary", None)
@@ -159,6 +161,7 @@ def _build_resume_hint(
     resume_map = {
         "parse_and_standardize": "parse_and_standardize",
         "resolve_ai_bom": "resolve_ai_bom",
+        "build_stix_graph": "build_stix_graph",
         "coverage_gap_analysis": "coverage_gap_analysis",
     }
     resume_from_node = resume_map.get(node_name)
@@ -938,30 +941,41 @@ def semantic_dedup_and_merge_node(state: dict[str, Any]) -> dict[str, Any]:
 
 def resolve_ai_bom_node(state: dict[str, Any]) -> dict[str, Any]:
     def worker(current_state: dict[str, Any]) -> dict[str, Any]:
+        return run_ai_bom_subgraph(current_state)
+
+    return _execute_with_retries(state, "resolve_ai_bom", worker)
+
+
+def review_ai_bom_resolution_node(state: dict[str, Any]) -> dict[str, Any]:
+    def worker(current_state: dict[str, Any]) -> dict[str, Any]:
         context = _runtime_context(current_state)
-        resolved_items, llm_bom_audits = BomMapperAgent(
+        mapper = BomMapperAgent(
             strategy=context.bom_resolution_strategy,
             llm_model=context.llm_model,
             llm_temperature=context.llm_temperature,
             validate_online=context.validate_llm_online,
             llm_runtime_config=context.model_dump(mode="python"),
-        ).resolve_batch(
-            current_state.get("standardized_items", []),
-            trace_id=current_state.get("trace_id"),
         )
-        queue_count = sum(
-            1
-            for item in resolved_items
-            for res in item.get("bom_resolutions", [])
-            if res.get("resolution_status") != "resolved"
+        reviewed = BomResolutionReviewerAgent(
+            strategy=context.bom_resolution_strategy,
+            llm_model=context.llm_model,
+            llm_temperature=context.llm_temperature,
+            validate_online=context.validate_llm_online,
+            llm_runtime_config=context.model_dump(mode="python"),
+        ).review_batch(
+            current_state.get("standardized_items", [])
+        )
+        persisted_items, queue_count = mapper.persist_batch(
+            reviewed["standardized_items"],
+            audits=current_state.get("llm_bom_resolution_audits", []),
+            trace_id=current_state.get("trace_id"),
         )
         pending_summary = {
             **current_state.get("runtime_context", {}).get("pending_queue_summary", {}),
             "unresolved_bom": queue_count,
         }
         return {
-            "standardized_items": resolved_items,
-            "llm_bom_resolution_audits": llm_bom_audits,
+            "standardized_items": persisted_items,
             "bom_queue_count": queue_count,
             "runtime_context": {
                 **current_state.get("runtime_context", {}),
@@ -969,28 +983,17 @@ def resolve_ai_bom_node(state: dict[str, Any]) -> dict[str, Any]:
             },
         }
 
-    return _execute_with_retries(state, "resolve_ai_bom", worker)
-
-
-def review_ai_bom_resolution_node(state: dict[str, Any]) -> dict[str, Any]:
-    def worker(current_state: dict[str, Any]) -> dict[str, Any]:
-        reviewed = BomResolutionReviewerAgent().review_batch(
-            current_state.get("standardized_items", [])
-        )
-        pending_summary = {
-            **current_state.get("runtime_context", {}).get("pending_queue_summary", {}),
-            "unresolved_bom": reviewed["bom_queue_count"],
-        }
-        return {
-            "standardized_items": reviewed["standardized_items"],
-            "bom_queue_count": reviewed["bom_queue_count"],
-            "runtime_context": {
-                **current_state.get("runtime_context", {}),
-                "pending_queue_summary": pending_summary,
-            },
-        }
-
     return _execute_with_retries(state, "review_ai_bom_resolution", worker)
+
+
+def build_stix_graph_node(state: dict[str, Any]) -> dict[str, Any]:
+    def worker(current_state: dict[str, Any]) -> dict[str, Any]:
+        context = _runtime_context(current_state)
+        if context.stix_strategy == "disabled":
+            return {"stix_bundle_refs": []}
+        return run_stix_subgraph(current_state)
+
+    return _execute_with_retries(state, "build_stix_graph", worker)
 
 
 def score_confidence_and_novelty_node(state: dict[str, Any]) -> dict[str, Any]:

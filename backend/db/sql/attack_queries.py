@@ -1,7 +1,8 @@
 GET_ATTACK_BY_CODE = """
 SELECT
     attack_id, attack_code, canonical_name, attack_family, severity_level, entry_status, summary, description,
-    exploit_preconditions, impact_scope, confidence_score, first_seen_at, last_seen_at, stix_type, stix_payload,
+    exploit_preconditions, impact_scope, confidence_score, first_seen_at, last_seen_at,
+    primary_stix_bundle_id, primary_stix_object_id, stix_graph_status, stix_type, stix_payload,
     created_at, updated_at
 FROM wp11.attack_entry
 WHERE attack_code = %(attack_code)s
@@ -10,7 +11,8 @@ WHERE attack_code = %(attack_code)s
 GET_ATTACK_BY_ID = """
 SELECT
     attack_id, attack_code, canonical_name, attack_family, severity_level, entry_status, summary, description,
-    exploit_preconditions, impact_scope, confidence_score, first_seen_at, last_seen_at, stix_type, stix_payload,
+    exploit_preconditions, impact_scope, confidence_score, first_seen_at, last_seen_at,
+    primary_stix_bundle_id, primary_stix_object_id, stix_graph_status, stix_type, stix_payload,
     created_at, updated_at
 FROM wp11.attack_entry
 WHERE attack_id = %(attack_id)s
@@ -19,28 +21,33 @@ WHERE attack_id = %(attack_id)s
 CREATE_ATTACK_ENTRY = """
 INSERT INTO wp11.attack_entry (
     attack_code, canonical_name, attack_family, severity_level, entry_status, summary, description,
-    exploit_preconditions, impact_scope, confidence_score, first_seen_at, last_seen_at, stix_type, stix_payload
+    exploit_preconditions, impact_scope, confidence_score, first_seen_at, last_seen_at,
+    primary_stix_bundle_id, primary_stix_object_id, stix_graph_status, stix_type, stix_payload
 )
 VALUES (
     %(attack_code)s, %(canonical_name)s, %(attack_family)s, %(severity_level)s, %(entry_status)s, %(summary)s,
     %(description)s, %(exploit_preconditions)s, %(impact_scope)s, %(confidence_score)s, %(first_seen_at)s,
-    %(last_seen_at)s, %(stix_type)s, %(stix_payload)s
+    %(last_seen_at)s, %(primary_stix_bundle_id)s, %(primary_stix_object_id)s, %(stix_graph_status)s,
+    %(stix_type)s, %(stix_payload)s
 )
 RETURNING
     attack_id, attack_code, canonical_name, attack_family, severity_level, entry_status, summary, description,
-    exploit_preconditions, impact_scope, confidence_score, first_seen_at, last_seen_at, stix_type, stix_payload,
+    exploit_preconditions, impact_scope, confidence_score, first_seen_at, last_seen_at,
+    primary_stix_bundle_id, primary_stix_object_id, stix_graph_status, stix_type, stix_payload,
     created_at, updated_at
 """
 
 UPSERT_ATTACK_ENTRY_BY_CODE = """
 INSERT INTO wp11.attack_entry (
     attack_code, canonical_name, attack_family, severity_level, entry_status, summary, description,
-    exploit_preconditions, impact_scope, confidence_score, first_seen_at, last_seen_at, stix_type, stix_payload
+    exploit_preconditions, impact_scope, confidence_score, first_seen_at, last_seen_at,
+    primary_stix_bundle_id, primary_stix_object_id, stix_graph_status, stix_type, stix_payload
 )
 VALUES (
     %(attack_code)s, %(canonical_name)s, %(attack_family)s, %(severity_level)s, %(entry_status)s, %(summary)s,
     %(description)s, %(exploit_preconditions)s, %(impact_scope)s, %(confidence_score)s, %(first_seen_at)s,
-    %(last_seen_at)s, %(stix_type)s, %(stix_payload)s
+    %(last_seen_at)s, %(primary_stix_bundle_id)s, %(primary_stix_object_id)s, %(stix_graph_status)s,
+    %(stix_type)s, %(stix_payload)s
 )
 ON CONFLICT (attack_code) DO UPDATE SET
     canonical_name = EXCLUDED.canonical_name,
@@ -54,11 +61,15 @@ ON CONFLICT (attack_code) DO UPDATE SET
     confidence_score = EXCLUDED.confidence_score,
     first_seen_at = EXCLUDED.first_seen_at,
     last_seen_at = EXCLUDED.last_seen_at,
+    primary_stix_bundle_id = EXCLUDED.primary_stix_bundle_id,
+    primary_stix_object_id = EXCLUDED.primary_stix_object_id,
+    stix_graph_status = EXCLUDED.stix_graph_status,
     stix_type = EXCLUDED.stix_type,
     stix_payload = EXCLUDED.stix_payload
 RETURNING
     attack_id, attack_code, canonical_name, attack_family, severity_level, entry_status, summary, description,
-    exploit_preconditions, impact_scope, confidence_score, first_seen_at, last_seen_at, stix_type, stix_payload,
+    exploit_preconditions, impact_scope, confidence_score, first_seen_at, last_seen_at,
+    primary_stix_bundle_id, primary_stix_object_id, stix_graph_status, stix_type, stix_payload,
     created_at, updated_at
 """
 
@@ -207,7 +218,8 @@ def build_update_attack_entry_query(set_fields: list[str]) -> str:
     WHERE attack_id = %(attack_id)s
     RETURNING
         attack_id, attack_code, canonical_name, attack_family, severity_level, entry_status, summary, description,
-        exploit_preconditions, impact_scope, confidence_score, first_seen_at, last_seen_at, stix_type, stix_payload,
+        exploit_preconditions, impact_scope, confidence_score, first_seen_at, last_seen_at,
+        primary_stix_bundle_id, primary_stix_object_id, stix_graph_status, stix_type, stix_payload,
         created_at, updated_at
     """
 

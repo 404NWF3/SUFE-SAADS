@@ -120,30 +120,40 @@ LIMIT %(limit)s
 
 UPSERT_ATTACK_COMPONENT_IMPACT = """
 INSERT INTO wp11.attack_component_impact (
-    attack_id, component_id, version_constraint_raw, normalized_constraint, match_mode,
-    impact_scope, confidence_score, evidence_uri
+    attack_id, component_id, mention_id, source_raw_id, version_constraint_raw,
+    normalized_constraint, match_mode, impact_scope, review_status, resolver_strategy,
+    confidence_score, evidence_uri, evidence_snippet
 )
 VALUES (
-    %(attack_id)s, %(component_id)s, %(version_constraint_raw)s, %(normalized_constraint)s, %(match_mode)s,
-    %(impact_scope)s, %(confidence_score)s, %(evidence_uri)s
+    %(attack_id)s, %(component_id)s, %(mention_id)s, %(source_raw_id)s,
+    %(version_constraint_raw)s, %(normalized_constraint)s, %(match_mode)s,
+    %(impact_scope)s, %(review_status)s, %(resolver_strategy)s, %(confidence_score)s,
+    %(evidence_uri)s, %(evidence_snippet)s
 )
 ON CONFLICT (
     attack_id, component_id, COALESCE(normalized_constraint, ''), impact_scope
 )
 DO UPDATE SET
+    mention_id = EXCLUDED.mention_id,
+    source_raw_id = EXCLUDED.source_raw_id,
     match_mode = EXCLUDED.match_mode,
+    review_status = EXCLUDED.review_status,
+    resolver_strategy = EXCLUDED.resolver_strategy,
     confidence_score = EXCLUDED.confidence_score,
     evidence_uri = EXCLUDED.evidence_uri,
+    evidence_snippet = EXCLUDED.evidence_snippet,
     version_constraint_raw = EXCLUDED.version_constraint_raw
 RETURNING
-    impact_id, attack_id, component_id, version_constraint_raw, normalized_constraint, match_mode,
-    impact_scope, confidence_score, evidence_uri, created_at
+    impact_id, attack_id, component_id, mention_id, source_raw_id, version_constraint_raw,
+    normalized_constraint, match_mode, impact_scope, review_status, resolver_strategy,
+    confidence_score, evidence_uri, evidence_snippet, created_at
 """
 
 LIST_COMPONENT_IMPACTS_BY_ATTACK = """
 SELECT
-    impact_id, attack_id, component_id, version_constraint_raw, normalized_constraint, match_mode,
-    impact_scope, confidence_score, evidence_uri, created_at
+    impact_id, attack_id, component_id, mention_id, source_raw_id, version_constraint_raw,
+    normalized_constraint, match_mode, impact_scope, review_status, resolver_strategy,
+    confidence_score, evidence_uri, evidence_snippet, created_at
 FROM wp11.attack_component_impact
 WHERE attack_id = %(attack_id)s
 ORDER BY confidence_score DESC, created_at DESC
@@ -151,9 +161,37 @@ ORDER BY confidence_score DESC, created_at DESC
 
 LIST_ATTACKS_BY_COMPONENT = """
 SELECT
-    impact_id, attack_id, component_id, version_constraint_raw, normalized_constraint, match_mode,
-    impact_scope, confidence_score, evidence_uri, created_at
+    impact_id, attack_id, component_id, mention_id, source_raw_id, version_constraint_raw,
+    normalized_constraint, match_mode, impact_scope, review_status, resolver_strategy,
+    confidence_score, evidence_uri, evidence_snippet, created_at
 FROM wp11.attack_component_impact
 WHERE component_id = %(component_id)s
 ORDER BY confidence_score DESC, created_at DESC
+"""
+
+INSERT_ATTACK_COMPONENT_MENTION = """
+INSERT INTO wp11.attack_component_mention (
+    attack_id, raw_id, mentioned_name, mentioned_vendor, mentioned_version, normalized_alias,
+    normalized_vendor, component_layer, impact_scope, dependency_role, evidence_snippet,
+    extractor_name, extraction_confidence
+)
+VALUES (
+    %(attack_id)s, %(raw_id)s, %(mentioned_name)s, %(mentioned_vendor)s, %(mentioned_version)s,
+    %(normalized_alias)s, %(normalized_vendor)s, %(component_layer)s, %(impact_scope)s,
+    %(dependency_role)s, %(evidence_snippet)s, %(extractor_name)s, %(extraction_confidence)s
+)
+RETURNING
+    mention_id, attack_id, raw_id, mentioned_name, mentioned_vendor, mentioned_version, normalized_alias,
+    normalized_vendor, component_layer, impact_scope, dependency_role, evidence_snippet,
+    extractor_name, extraction_confidence, created_at
+"""
+
+LIST_COMPONENT_MENTIONS_BY_ATTACK = """
+SELECT
+    mention_id, attack_id, raw_id, mentioned_name, mentioned_vendor, mentioned_version, normalized_alias,
+    normalized_vendor, component_layer, impact_scope, dependency_role, evidence_snippet,
+    extractor_name, extraction_confidence, created_at
+FROM wp11.attack_component_mention
+WHERE attack_id = %(attack_id)s
+ORDER BY created_at DESC
 """

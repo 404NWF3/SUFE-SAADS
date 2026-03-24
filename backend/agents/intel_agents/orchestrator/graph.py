@@ -5,6 +5,7 @@ from langgraph.types import Send  # noqa: F401 — imported for Send API fan-out
 
 from .nodes import (
     assess_collection_yield_node,
+    build_stix_graph_node,
     collect_advisory_sources_node,
     collect_code_sources_node,
     collect_community_sources_node,
@@ -53,6 +54,7 @@ def build_phase1_graph(*, checkpointer=None):
     graph.add_node("semantic_dedup_and_merge", semantic_dedup_and_merge_node)
     graph.add_node("resolve_ai_bom", resolve_ai_bom_node)
     graph.add_node("review_ai_bom_resolution", review_ai_bom_resolution_node)
+    graph.add_node("build_stix_graph", build_stix_graph_node)
     graph.add_node("score_confidence_and_novelty", score_confidence_and_novelty_node)
     graph.add_node("refresh_coverage_view", refresh_coverage_view_node)
     graph.add_node("coverage_gap_analysis", coverage_gap_analysis_node)
@@ -79,6 +81,7 @@ def build_phase1_graph(*, checkpointer=None):
             "semantic_dedup_and_merge": "semantic_dedup_and_merge",
             "resolve_ai_bom": "resolve_ai_bom",
             "review_ai_bom_resolution": "review_ai_bom_resolution",
+            "build_stix_graph": "build_stix_graph",
             "score_confidence_and_novelty": "score_confidence_and_novelty",
             "refresh_coverage_view": "refresh_coverage_view",
             "coverage_gap_analysis": "coverage_gap_analysis",
@@ -122,8 +125,8 @@ def build_phase1_graph(*, checkpointer=None):
     )
     graph.add_edge("parse_and_standardize", "semantic_dedup_and_merge")
     graph.add_edge("semantic_dedup_and_merge", "resolve_ai_bom")
-    graph.add_edge("resolve_ai_bom", "review_ai_bom_resolution")
-    graph.add_edge("review_ai_bom_resolution", "score_confidence_and_novelty")
+    graph.add_edge("resolve_ai_bom", "build_stix_graph")
+    graph.add_edge("build_stix_graph", "score_confidence_and_novelty")
     graph.add_edge("score_confidence_and_novelty", "refresh_coverage_view")
     graph.add_edge("refresh_coverage_view", "coverage_gap_analysis")
     graph.add_conditional_edges(

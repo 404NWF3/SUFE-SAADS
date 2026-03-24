@@ -49,6 +49,7 @@ class RuleValidatorFuser:
         llm_projection: dict[str, Any],
         *,
         rule_fallback: dict[str, Any] | None = None,
+        allow_field_fusion: bool = False,
     ) -> dict[str, Any]:
         """Validate *llm_projection* and return an enriched copy.
 
@@ -59,6 +60,10 @@ class RuleValidatorFuser:
         rule_fallback:
             Optional dict from the old rule-based extractor.  Used only to
             fill ``"unknown"`` fields when LLM cannot determine a value.
+        allow_field_fusion:
+            When ``True``, rule fallback values may populate missing semantic
+            fields. The default is ``False`` so the validator stays
+            evidence-constrained and does not replace LLM semantics.
 
         Returns
         -------
@@ -164,17 +169,20 @@ class RuleValidatorFuser:
             validated_bom.append({**mention, "confidence_score": round(confidence, 3)})
         proj["bom_mentions"] = validated_bom
 
-        # --- 5. Field-level "unknown" fusion with rule fallback ----------------
+        # --- 5. Optional field-level fusion with rule fallback -----------------
         for field_name in ("canonical_name", "attack_family", "summary", "description"):
             value = str(proj.get(field_name, "")).strip()
-            if value.lower() in ("unknown", ""):
+            if value.lower() not in ("unknown", ""):
+                continue
+            if allow_field_fusion:
                 fallback_value = str(rule_fallback.get(field_name, "")).strip()
                 if fallback_value and fallback_value.lower() != "unknown":
                     proj[field_name] = fallback_value
                     trace.append(f"{field_name}=rule_fallback_substituted")
-                elif value == "":
-                    proj[field_name] = "unknown"
-                    trace.append(f"{field_name}=remained_unknown")
+                    continue
+            if value == "":
+                proj[field_name] = "unknown"
+                trace.append(f"{field_name}=remained_unknown")
 
         # --- 6. Pack results ---------------------------------------------------
         proj["validation_findings"] = findings

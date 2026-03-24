@@ -22,6 +22,9 @@ class AttackEntry:
     confidence_score: Decimal
     first_seen_at: datetime | None
     last_seen_at: datetime | None
+    primary_stix_bundle_id: UUID | None
+    primary_stix_object_id: UUID | None
+    stix_graph_status: str | None
     stix_type: str | None
     stix_payload: dict[str, Any] | None
     created_at: datetime

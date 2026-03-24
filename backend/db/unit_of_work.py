@@ -11,6 +11,7 @@ from .repositories import (
     GovernanceRepository,
     ReadModelRepository,
     SourceRepository,
+    StixRepository,
 )
 from .typing import SqlContext
 
@@ -37,6 +38,7 @@ class UnitOfWork:
         self.components: ComponentRepository
         self.governance: GovernanceRepository
         self.read_models: ReadModelRepository
+        self.stix: StixRepository
 
     @property
     def conn(self) -> Any:
@@ -55,6 +57,7 @@ class UnitOfWork:
         self.components = ComponentRepository(self._conn, context=self._context)
         self.governance = GovernanceRepository(self._conn, context=self._context)
         self.read_models = ReadModelRepository(self._conn, context=self._context)
+        self.stix = StixRepository(self._conn, context=self._context)
         self._entered = True
         return self
 

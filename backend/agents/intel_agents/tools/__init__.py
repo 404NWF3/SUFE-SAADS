@@ -39,10 +39,12 @@ from .dedup_tools import (
     taxonomy_overlap_score,
 )
 from .llm_bom_resolver_tools import LangChainLlmBomResolver
+from .llm_bom_review_tools import LangChainLlmBomReviewer
 from .llm_coverage_analyst_tools import LangChainLlmCoverageAnalyst
 from .llm_dedup_adjudication_tools import LangChainLlmDedupAdjudicator
 from .llm_merge_judge_tools import LangChainLlmMergeJudge
 from .llm_search_reflection_tools import LangChainLlmSearchReflectionAgent
+from .llm_stix_graph_tools import LangChainLlmStixExtractor, LangChainLlmStixReviewer
 from .llm_standardization_tools import LangChainLlmStandardizer
 from .llm_supervisor_planning_tools import LangChainLlmSupervisorPlanner
 from .rule_validator_fuser import RuleValidatorFuser
@@ -72,10 +74,13 @@ __all__ = [
     "infer_cvss_hint",
     "infer_taxonomy_labels",
     "LangChainLlmBomResolver",
+    "LangChainLlmBomReviewer",
     "LangChainLlmCoverageAnalyst",
     "LangChainLlmDedupAdjudicator",
     "LangChainLlmMergeJudge",
     "LangChainLlmSearchReflectionAgent",
+    "LangChainLlmStixExtractor",
+    "LangChainLlmStixReviewer",
     "LangChainLlmStandardizer",
     "LangChainLlmSupervisorPlanner",
     "RuleValidatorFuser",

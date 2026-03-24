@@ -102,10 +102,13 @@ class BomResolutionService:
         queue_item = self.uow.governance.enqueue_bom_resolution(
             attack_id=attack_id,
             raw_id=raw_id,
+            mention_id=None,
             mentioned_name=payload.mentioned_name,
             mentioned_vendor=payload.mentioned_vendor,
             mentioned_version=payload.mentioned_version,
             reason_code=payload.reason_code,
+            candidate_snapshot=None,
+            reasoning_summary=None,
         )
         return BomResolutionResult(status="queued", queue_id=queue_item.queue_id)
 

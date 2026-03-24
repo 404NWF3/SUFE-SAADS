@@ -406,7 +406,9 @@ class StandardizerAgent:
 
         # LLM succeeded — run rule validation/fusion
         validated = self.rule_validator.validate_and_fuse(
-            llm_result, rule_fallback=rule_fallback
+            llm_result,
+            rule_fallback=rule_fallback,
+            allow_field_fusion=False,
         )
 
         # Merge CVSS: prefer source-supplied CVSS over both LLM and rule estimates

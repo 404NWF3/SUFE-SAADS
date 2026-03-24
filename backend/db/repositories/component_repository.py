@@ -3,7 +3,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from ..models import AiComponent, AiComponentAlias, AttackComponentImpact
+from ..models import (
+    AiComponent,
+    AiComponentAlias,
+    AttackComponentImpact,
+    AttackComponentMention,
+)
 from ..sql import bom_queries as q
 from .base import BaseRepository
 
@@ -178,24 +183,34 @@ class ComponentRepository(BaseRepository):
         *,
         attack_id: str,
         component_id: str,
+        mention_id: str | None = None,
+        source_raw_id: str | None = None,
         version_constraint_raw: str | None = None,
         normalized_constraint: str | None = None,
         match_mode: str,
         impact_scope: str,
+        review_status: str = "accepted",
+        resolver_strategy: str | None = None,
         confidence_score: float,
         evidence_uri: str | None = None,
+        evidence_snippet: str | None = None,
     ) -> AttackComponentImpact:
         row = self._fetch_one(
             q.UPSERT_ATTACK_COMPONENT_IMPACT,
             {
                 "attack_id": attack_id,
                 "component_id": component_id,
+                "mention_id": mention_id,
+                "source_raw_id": source_raw_id,
                 "version_constraint_raw": version_constraint_raw,
                 "normalized_constraint": normalized_constraint,
                 "match_mode": match_mode,
                 "impact_scope": impact_scope,
+                "review_status": review_status,
+                "resolver_strategy": resolver_strategy,
                 "confidence_score": confidence_score,
                 "evidence_uri": evidence_uri,
+                "evidence_snippet": evidence_snippet,
             },
         )
         return self._require_model(
@@ -219,3 +234,53 @@ class ComponentRepository(BaseRepository):
             q.LIST_ATTACKS_BY_COMPONENT, {"component_id": component_id}
         )
         return [AttackComponentImpact(**row) for row in rows]
+
+    def insert_attack_component_mention(
+        self,
+        *,
+        attack_id: str | None,
+        raw_id: str | None,
+        mentioned_name: str,
+        mentioned_vendor: str | None = None,
+        mentioned_version: str | None = None,
+        normalized_alias: str,
+        normalized_vendor: str | None = None,
+        component_layer: str | None = None,
+        impact_scope: str | None = None,
+        dependency_role: str | None = None,
+        evidence_snippet: str | None = None,
+        extractor_name: str = "bom_llm_extractor",
+        extraction_confidence: float = 0.0,
+    ) -> AttackComponentMention:
+        row = self._fetch_one(
+            q.INSERT_ATTACK_COMPONENT_MENTION,
+            {
+                "attack_id": attack_id,
+                "raw_id": raw_id,
+                "mentioned_name": mentioned_name,
+                "mentioned_vendor": mentioned_vendor,
+                "mentioned_version": mentioned_version,
+                "normalized_alias": normalized_alias,
+                "normalized_vendor": normalized_vendor,
+                "component_layer": component_layer,
+                "impact_scope": impact_scope,
+                "dependency_role": dependency_role,
+                "evidence_snippet": evidence_snippet,
+                "extractor_name": extractor_name,
+                "extraction_confidence": extraction_confidence,
+            },
+        )
+        return self._require_model(
+            AttackComponentMention,
+            row,
+            message="Failed to insert attack_component_mention",
+        )
+
+    def list_component_mentions_by_attack(
+        self, attack_id: str
+    ) -> list[AttackComponentMention]:
+        rows = self._fetch_all(
+            q.LIST_COMPONENT_MENTIONS_BY_ATTACK,
+            {"attack_id": attack_id},
+        )
+        return [AttackComponentMention(**row) for row in rows]

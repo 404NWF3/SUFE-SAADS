@@ -56,6 +56,25 @@ class Wp12AttackFeedRow:
 
 
 @dataclass(slots=True)
+class Wp12AttackExecutionFeedRow:
+    attack_id: UUID
+    attack_code: str
+    canonical_name: str
+    attack_family: str
+    severity_level: str
+    summary: str
+    component_id: UUID | None
+    component_name: str | None
+    normalized_constraint: str | None
+    component_impact_scope: str | None
+    primary_stix_bundle_id: UUID | None
+    primary_stix_object_id: UUID | None
+    stix_graph_status: str | None
+    primary_attack_pattern_stix_id: str | None
+    stix_bundle_payload: dict | None
+
+
+@dataclass(slots=True)
 class ComponentRiskOverviewRow:
     component_id: UUID
     component_code: str

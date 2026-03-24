@@ -43,6 +43,9 @@ class StandardizedIntelDTO(_StrictModel):
     impact_scope: str | None = None
     first_seen_at: str | None = None
     last_seen_at: str | None = None
+    primary_stix_bundle_id: str | None = None
+    primary_stix_object_id: str | None = None
+    stix_graph_status: str | None = None
     stix_type: str | None = None
     stix_payload: dict[str, Any] | None = None
     evidence_snippet: str | None = None
@@ -78,8 +81,10 @@ class BomCandidateDTO(_StrictModel):
 
 class BomResolutionReviewDTO(_StrictModel):
     decision: str = Field(pattern="^(accept|revise|review_queue)$")
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     reasons: list[str] = Field(default_factory=list)
     ambiguity_notes: list[str] = Field(default_factory=list)
+    review_trace: list[str] = Field(default_factory=list)
     component_suggestion: dict[str, Any] | None = None
 
 
@@ -139,6 +144,9 @@ class StableAttackRecordDTO(_StrictModel):
     severity_level: str = Field(pattern="^(info|low|medium|high|critical)$")
     summary: str | None = None
     description: str = Field(min_length=1)
+    primary_stix_bundle_id: str | None = None
+    primary_stix_object_id: str | None = None
+    stix_graph_status: str | None = None
     taxonomy_items: list[dict[str, Any]] = Field(default_factory=list)
     cvss_hint: dict[str, Any] | None = None
     bom_mentions: list[dict[str, Any]] = Field(default_factory=list)
@@ -269,7 +277,7 @@ class LlmBomResolutionAuditDTO(_StrictModel):
     """Audit record for one LLM BOM resolution invocation."""
 
     raw_id: str = Field(min_length=1)
-    mention_index: int = Field(ge=0)
+    mention_index: int = Field(ge=-1)
     mentioned_name: str = Field(min_length=1)
     strategy_requested: str = Field(min_length=1)
     strategy_executed: str = Field(min_length=1)
@@ -283,6 +291,8 @@ class LlmBomResolutionAuditDTO(_StrictModel):
     fallback_reason: str | None = None
     candidate_count: int = Field(ge=0)
     selected_component_code: str | None = None
+    reasoning_trace: list[str] = Field(default_factory=list)
+    evidence_quotes: list[str] = Field(default_factory=list)
     llm_wait_seconds: float | None = Field(default=None, ge=0.0)
     attempted_profiles: list[str] = Field(default_factory=list)
     attempted_profile_labels: list[str] = Field(default_factory=list)
@@ -338,3 +348,75 @@ class LlmDedupJudgmentAuditDTO(_StrictModel):
     attempted_profiles: list[str] = Field(default_factory=list)
     attempted_profile_labels: list[str] = Field(default_factory=list)
     invoked_at: str = Field(min_length=1)
+
+
+# ---------------------------------------------------------------------------
+# STIX graph extraction DTOs
+# ---------------------------------------------------------------------------
+
+
+class StixExternalReferenceDTO(_StrictModel):
+    source_name: str = Field(min_length=1)
+    external_id: str | None = None
+    url: str | None = None
+    description: str | None = None
+
+
+class StixKillChainPhaseDTO(_StrictModel):
+    kill_chain_name: str = Field(min_length=1)
+    phase_name: str = Field(min_length=1)
+
+
+class StixDraftObjectDTO(_StrictModel):
+    local_ref: str = Field(min_length=1)
+    object_type: Literal[
+        "report",
+        "attack-pattern",
+        "vulnerability",
+        "indicator",
+        "tool",
+        "malware",
+        "course-of-action",
+        "identity",
+    ]
+    name: str = Field(min_length=1)
+    description: str | None = None
+    labels: list[str] = Field(default_factory=list)
+    aliases: list[str] = Field(default_factory=list)
+    external_references: list[StixExternalReferenceDTO] = Field(default_factory=list)
+    kill_chain_phases: list[StixKillChainPhaseDTO] = Field(default_factory=list)
+    pattern: str | None = None
+    pattern_type: str | None = None
+    is_primary: bool = False
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence_quotes: list[str] = Field(default_factory=list)
+
+
+class StixDraftRelationshipDTO(_StrictModel):
+    local_ref: str = Field(min_length=1)
+    relationship_type: str = Field(min_length=1)
+    source_ref: str = Field(min_length=1)
+    target_ref: str = Field(min_length=1)
+    description: str | None = None
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence_quotes: list[str] = Field(default_factory=list)
+
+
+class StixGraphDraftDTO(_StrictModel):
+    bundle_name: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    objects: list[StixDraftObjectDTO] = Field(default_factory=list)
+    relationships: list[StixDraftRelationshipDTO] = Field(default_factory=list)
+    graph_confidence: float = Field(ge=0.0, le=1.0)
+    reasoning_summary: str = Field(min_length=1)
+    reasoning_trace: list[str] = Field(default_factory=list)
+
+
+class StixReviewDecisionDTO(_StrictModel):
+    decision: Literal["accept", "review_queue"]
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    reasoning_summary: str = Field(min_length=1)
+    finding_codes: list[str] = Field(default_factory=list)
+    flagged_object_refs: list[str] = Field(default_factory=list)
+    flagged_relationship_refs: list[str] = Field(default_factory=list)
+    review_trace: list[str] = Field(default_factory=list)

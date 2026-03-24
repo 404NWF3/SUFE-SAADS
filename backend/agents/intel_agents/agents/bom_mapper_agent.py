@@ -5,6 +5,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Literal
 
+from backend.db.services.component_seed_service import AiComponentSeedService
+from backend.db.typing import SqlContext
+from backend.db.unit_of_work import UnitOfWork
+
 from ..schemas.intel import BomResolutionDTO, LlmBomResolutionAuditDTO
 from ..services.component_resolution_service import ComponentResolutionService
 from ..tools.llm_client_factory import resolve_default_model
@@ -19,6 +23,19 @@ BomResolutionStrategyValue = Literal[
 ]
 
 
+class _BomResolutionUowContext:
+    def __init__(self, uow: UnitOfWork | None) -> None:
+        self._uow = uow
+
+    def __enter__(self) -> UnitOfWork | None:
+        return self._uow
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        if self._uow is not None:
+            self._uow.__exit__(exc_type, exc, tb)
+        return False
+
+
 class BomMapperAgent:
     """Phase 5 BOM resolution agent.
 
@@ -27,9 +44,10 @@ class BomMapperAgent:
        candidate recall (seed catalog + DB alias/trigram/embedding).
     2. ``LangChainLlmBomResolver.resolve()`` receives attack context +
        candidates and makes the final accept/review_queue/no_match decision.
-    3. ``ComponentResolutionService.persist_llm_resolution()`` builds the
-       ``BomResolutionDTO`` and optionally persists to DB.
-    4. Fallback: rules-only path uses the original ``resolve_item()`` logic.
+    3. ``ComponentResolutionService.build_llm_resolution()`` builds the
+       in-memory ``BomResolutionDTO`` without touching the DB.
+    4. Final persistence happens only after reviewer output via
+       ``BomMapperAgent.persist_batch()``.
 
     The strategy parameter controls which path is taken:
     - ``llm_required``: LLM must succeed, otherwise the node fails.
@@ -98,14 +116,20 @@ class BomMapperAgent:
             return self._rules_only_resolve_item(item, trace_id=trace_id)
 
         max_workers = min(self.max_concurrency, max(1, len(items)))
+        if self.strategy in ("llm_required", "llm_optional"):
+            max_workers = 1
         results: list[Any] = [None] * len(items)
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_idx = {
-                executor.submit(_process_item, item): i
-                for i, item in enumerate(items)
-            }
-            for future in as_completed(future_to_idx):
-                results[future_to_idx[future]] = future.result()
+        if max_workers == 1:
+            for idx, item in enumerate(items):
+                results[idx] = _process_item(item)
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_idx = {
+                    executor.submit(_process_item, item): i
+                    for i, item in enumerate(items)
+                }
+                for future in as_completed(future_to_idx):
+                    results[future_to_idx[future]] = future.result()
 
         for resolved, item_queue, audits in results:
             resolved_items.append(resolved)
@@ -141,33 +165,50 @@ class BomMapperAgent:
             updated.get("evidence_snippet", "") or updated.get("description", "") or ""
         )
         evidence_uri = next(iter(updated.get("evidence_refs", []) or []), None)
-
-        for mention_idx, mention in enumerate(updated.get("bom_mentions", [])):
-            resolution, audit = self._llm_resolve_mention(
-                mention=mention,
-                mention_idx=mention_idx,
-                item=updated,
-                attack_context=attack_context,
-                evidence_text=evidence_text,
-                evidence_uri=evidence_uri,
-                trace_id=trace_id,
-            )
-            if resolution["resolution_status"] != "resolved":
-                queue_count += 1
-                unresolved_mentions.append(
-                    {
-                        "mentioned_name": resolution["mentioned_name"],
-                        "mentioned_vendor": resolution.get("mentioned_vendor"),
-                        "reason_codes": resolution.get("reason_codes", []),
-                        "queue_ref": resolution.get("queue_ref"),
-                        "top_candidate": (
-                            resolution.get("selected_component") or {}
-                        ).get("component_name"),
-                    }
+        db_fallback: dict[str, Any] | None = None
+        with self._open_resolution_uow(trace_id=trace_id) as uow:
+            if uow is None:
+                db_fallback = {
+                    "active": True,
+                    "reason": "db_resolution_context_unavailable",
+                }
+            for mention_idx, mention in enumerate(updated.get("bom_mentions", [])):
+                mention = {
+                    **mention,
+                    "raw_id": updated.get("raw_id"),
+                }
+                resolution, audit = self._llm_resolve_mention(
+                    mention=mention,
+                    mention_idx=mention_idx,
+                    item=updated,
+                    attack_context=attack_context,
+                    evidence_text=evidence_text,
+                    evidence_uri=evidence_uri,
+                    uow=uow,
                 )
-            resolutions.append(resolution)
-            if audit:
-                audits.append(audit)
+                if resolution["resolution_status"] != "resolved":
+                    queue_count += 1
+                    unresolved_mentions.append(
+                        {
+                            "mentioned_name": resolution["mentioned_name"],
+                            "mentioned_vendor": resolution.get("mentioned_vendor"),
+                            "reason_codes": resolution.get("reason_codes", []),
+                            "queue_ref": resolution.get("queue_ref"),
+                            "top_candidate": (
+                                resolution.get("selected_component") or {}
+                            ).get("component_name"),
+                        }
+                    )
+                resolutions.append(resolution)
+                if audit:
+                    audits.append(audit)
+            if not updated.get("bom_mentions"):
+                audits.append(
+                    self._build_no_signal_audit(
+                        raw_id=str(updated.get("raw_id") or "unknown"),
+                        reason="no bom mentions extracted from standardized item",
+                    )
+                )
 
         updated["bom_resolutions"] = resolutions
         updated["source_metadata"] = {
@@ -181,6 +222,8 @@ class BomMapperAgent:
                 "resolution_strategy": self.strategy,
             },
         }
+        if db_fallback:
+            updated["source_metadata"]["bom_resolution_db_fallback"] = db_fallback
         return updated, queue_count, audits
 
     def _llm_resolve_mention(
@@ -192,7 +235,7 @@ class BomMapperAgent:
         attack_context: dict[str, Any],
         evidence_text: str,
         evidence_uri: str | None,
-        trace_id: str | None,
+        uow: UnitOfWork | None,
     ) -> tuple[dict[str, Any], dict[str, Any] | None]:
         """Resolve a single mention via retrieval + LLM."""
         raw_id = item.get("raw_id", "unknown")
@@ -200,7 +243,7 @@ class BomMapperAgent:
 
         # Step 1: Candidate retrieval
         retrieval = self.resolution_service.retrieve_candidates_for_mention(
-            mention, uow=None
+            mention, uow=uow
         )
         candidates = retrieval["candidates"]
 
@@ -240,13 +283,10 @@ class BomMapperAgent:
 
         # Step 3: Build resolution
         if llm_decision is not None:
-            resolution = self.resolution_service.persist_llm_resolution(
+            resolution = self.resolution_service.build_llm_resolution(
                 mention=mention,
                 llm_decision=llm_decision,
                 candidates=candidates,
-                evidence_uri=evidence_uri,
-                attack_id=None,  # no UoW in this path
-                uow=None,
             )
         else:
             # Rules-only fallback
@@ -274,6 +314,311 @@ class BomMapperAgent:
         )
 
         return resolution, audit
+
+    def _open_resolution_uow(self, *, trace_id: str | None):
+        try:
+            context = SqlContext(trace_id=trace_id, agent_name="bom_mapper_agent_llm")
+            uow = UnitOfWork(context=context)
+            entered = uow.__enter__()
+            AiComponentSeedService(entered).ensure_seeded(trace_id=trace_id)
+            return _BomResolutionUowContext(entered)
+        except Exception:
+            return _BomResolutionUowContext(None)
+
+    def _persist_mention(
+        self,
+        *,
+        mention: dict[str, Any],
+        attack_id: str | None,
+        raw_id: str | None,
+        evidence_text: str,
+        uow: UnitOfWork | None,
+    ) -> str | None:
+        if uow is None:
+            return None
+        from ..tools import normalize_vendor_name
+        from backend.db.repositories.component_repository import normalize_component_alias
+
+        normalized_alias = normalize_component_alias(
+            str(mention.get("mentioned_name", "")),
+            mention.get("mentioned_vendor"),
+        )
+        row = uow.components.insert_attack_component_mention(
+            attack_id=attack_id,
+            raw_id=str(raw_id) if raw_id else None,
+            mentioned_name=str(mention.get("mentioned_name", "")),
+            mentioned_vendor=mention.get("mentioned_vendor"),
+            mentioned_version=mention.get("mentioned_version"),
+            normalized_alias=normalized_alias,
+            normalized_vendor=normalize_vendor_name(mention.get("mentioned_vendor")),
+            component_layer=mention.get("component_layer"),
+            impact_scope=mention.get("impact_scope"),
+            dependency_role=mention.get("dependency_role"),
+            evidence_snippet=evidence_text[:1000] or None,
+            extractor_name="bom_mapper_agent_llm",
+            extraction_confidence=float(mention.get("confidence_score", 0.0) or 0.0),
+        )
+        return str(row.mention_id)
+
+    def _persist_audit(
+        self,
+        *,
+        audit: dict[str, Any],
+        attack_id: str | None,
+        raw_id: str | None,
+        mention_id: str | None,
+        uow: UnitOfWork | None,
+    ) -> None:
+        if uow is None:
+            return
+        uow.governance.insert_bom_resolution_audit(
+            mention_id=mention_id,
+            attack_id=attack_id,
+            raw_id=str(raw_id) if raw_id else None,
+            strategy_requested=audit["strategy_requested"],
+            strategy_executed=audit["strategy_executed"],
+            llm_model=audit["llm_model"],
+            prompt_version=audit["prompt_version"],
+            llm_decision=audit["llm_decision"],
+            llm_confidence=float(audit["llm_confidence"]),
+            selected_component_code=audit.get("selected_component_code"),
+            reasoning_summary=audit["llm_reasoning"],
+            reasoning_trace=list(audit.get("reasoning_trace", []) or [])[:8] or None,
+            candidate_count=int(audit["candidate_count"]),
+            evidence_quotes=list(audit.get("evidence_quotes", []) or [])[:8] or None,
+        )
+
+    def persist_batch(
+        self,
+        items: list[dict[str, Any]],
+        *,
+        audits: list[dict[str, Any]] | None = None,
+        trace_id: str | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        audit_lookup: dict[tuple[str, int], dict[str, Any]] = {}
+        for audit in audits or []:
+            audit_lookup[
+                (
+                    str(audit.get("raw_id") or "unknown"),
+                    int(audit.get("mention_index", -1)),
+                )
+            ] = audit
+
+        queue_count = 0
+        persisted_items: list[dict[str, Any]] = []
+        try:
+            with UnitOfWork(
+                context=SqlContext(trace_id=trace_id, agent_name="bom_mapper_agent_persist")
+            ) as uow:
+                AiComponentSeedService(uow).ensure_seeded(trace_id=trace_id)
+                for item in items:
+                    persisted_item, item_queue_count = self._persist_item(
+                        item,
+                        audit_lookup=audit_lookup,
+                        uow=uow,
+                    )
+                    persisted_items.append(persisted_item)
+                    queue_count += item_queue_count
+        except Exception as exc:
+            for item in items:
+                persisted_items.append(
+                    {
+                        **deepcopy(item),
+                        "source_metadata": {
+                            **item.get("source_metadata", {}),
+                            "bom_persist_fallback": {
+                                "active": True,
+                                "error_type": type(exc).__name__,
+                                "error_message": str(exc)[:300],
+                            },
+                        },
+                    }
+                )
+            queue_count = sum(
+                1
+                for item in persisted_items
+                for resolution in item.get("bom_resolutions", [])
+                if resolution.get("resolution_status") != "resolved"
+            )
+        return persisted_items, queue_count
+
+    def _persist_item(
+        self,
+        item: dict[str, Any],
+        *,
+        audit_lookup: dict[tuple[str, int], dict[str, Any]],
+        uow: UnitOfWork,
+    ) -> tuple[dict[str, Any], int]:
+        updated = deepcopy(item)
+        raw_id = str(updated.get("raw_id") or "unknown")
+        attack_id = self.resolution_service._lookup_attack_id(updated, uow=uow)
+        evidence_text = (
+            updated.get("evidence_snippet", "")
+            or updated.get("description", "")
+            or updated.get("summary", "")
+        )
+        evidence_uri = next(iter(updated.get("evidence_refs", []) or []), None)
+        persisted_resolutions: list[dict[str, Any]] = []
+        item_queue_count = 0
+
+        for mention_idx, resolution in enumerate(updated.get("bom_resolutions", [])):
+            mention = (
+                list(updated.get("bom_mentions", []))[mention_idx]
+                if mention_idx < len(updated.get("bom_mentions", []))
+                else self._mention_from_resolution(resolution)
+            )
+            mention_id = self._persist_mention(
+                mention={**mention, "raw_id": raw_id},
+                attack_id=attack_id,
+                raw_id=raw_id,
+                evidence_text=evidence_text,
+                uow=uow,
+            )
+            audit = audit_lookup.get((raw_id, mention_idx))
+            if audit is not None:
+                self._persist_audit(
+                    audit=audit,
+                    attack_id=attack_id,
+                    raw_id=raw_id,
+                    mention_id=mention_id,
+                    uow=uow,
+                )
+
+            finalized_resolution = deepcopy(resolution)
+            finalized_resolution["reason_codes"] = list(
+                dict.fromkeys(
+                    [
+                        *list(finalized_resolution.get("reason_codes", []) or []),
+                        *self._confidence_reason_codes(finalized_resolution),
+                    ]
+                )
+            )
+            final_review_status = self._final_review_status(finalized_resolution)
+            finalized_resolution = self.resolution_service.persist_reviewed_resolution(
+                resolution=finalized_resolution,
+                attack_id=attack_id,
+                uow=uow,
+                mention_id=mention_id,
+                raw_id=raw_id,
+                evidence_uri=evidence_uri,
+                evidence_snippet=evidence_text[:1000] or None,
+                review_status=final_review_status,
+                resolver_strategy=(
+                    "llm_primary"
+                    if self.strategy in ("llm_required", "llm_optional")
+                    else "rules_only"
+                ),
+            )
+            if finalized_resolution.get("resolution_status") != "resolved":
+                item_queue_count += 1
+            persisted_resolutions.append(finalized_resolution)
+
+        if not updated.get("bom_resolutions"):
+            audit = audit_lookup.get((raw_id, -1))
+            if audit is not None:
+                self._persist_audit(
+                    audit=audit,
+                    attack_id=attack_id,
+                    raw_id=raw_id,
+                    mention_id=None,
+                    uow=uow,
+                )
+
+        updated["bom_resolutions"] = persisted_resolutions
+        updated["source_metadata"] = {
+            **updated.get("source_metadata", {}),
+            "bom_resolution_summary": {
+                **updated.get("source_metadata", {}).get("bom_resolution_summary", {}),
+                "persisted_at_end": True,
+                "resolved": sum(
+                    1
+                    for resolution in persisted_resolutions
+                    if resolution.get("resolution_status") == "resolved"
+                ),
+                "queued": item_queue_count,
+            },
+        }
+        return updated, item_queue_count
+
+    def _mention_from_resolution(self, resolution: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "mentioned_name": resolution.get("mentioned_name"),
+            "mentioned_vendor": resolution.get("mentioned_vendor"),
+            "mentioned_version": resolution.get("mentioned_version"),
+            "component_layer": None,
+            "impact_scope": "direct",
+            "dependency_role": None,
+            "confidence_score": float(resolution.get("match_confidence", 0.0) or 0.0),
+        }
+
+    def _final_review_status(self, resolution: dict[str, Any]) -> str:
+        review = dict(resolution.get("review") or {})
+        review_confidence = float(
+            review.get("confidence", resolution.get("match_confidence", 0.0)) or 0.0
+        )
+        final_confidence = min(
+            float(resolution.get("match_confidence", 0.0) or 0.0),
+            review_confidence,
+        )
+        auto_publish_threshold = float(
+            self.llm_runtime_config.get("bom_auto_publish_threshold", 0.85) or 0.85
+        )
+        if (
+            resolution.get("resolution_status") == "resolved"
+            and review.get("decision", "accept") == "accept"
+            and final_confidence >= auto_publish_threshold
+        ):
+            return "accepted"
+        return "review_queue"
+
+    def _confidence_reason_codes(self, resolution: dict[str, Any]) -> list[str]:
+        review = dict(resolution.get("review") or {})
+        review_confidence = float(
+            review.get("confidence", resolution.get("match_confidence", 0.0)) or 0.0
+        )
+        final_confidence = min(
+            float(resolution.get("match_confidence", 0.0) or 0.0),
+            review_confidence,
+        )
+        review_queue_threshold = float(
+            self.llm_runtime_config.get("review_queue_threshold", 0.60) or 0.60
+        )
+        reason_codes: list[str] = []
+        if not resolution.get("selected_component"):
+            reason_codes.append("missing_evidence")
+        if final_confidence < review_queue_threshold:
+            reason_codes.append("llm_low_confidence")
+        return reason_codes
+
+    def _build_no_signal_audit(
+        self,
+        *,
+        raw_id: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        return LlmBomResolutionAuditDTO(
+            raw_id=raw_id,
+            mention_index=-1,
+            mentioned_name="(no_component_signal)",
+            strategy_requested=self.strategy,
+            strategy_executed="audit_only",
+            llm_model=self.llm_model,
+            llm_profile_id=None,
+            llm_profile=None,
+            prompt_version=(self._llm.PROMPT_VERSION if self._llm else "n/a"),
+            llm_confidence=0.0,
+            llm_decision="no_signal",
+            llm_reasoning=reason,
+            fallback_reason=None,
+            candidate_count=0,
+            selected_component_code=None,
+            reasoning_trace=["No reliable AI BOM mention was available in the standardized item."],
+            evidence_quotes=[],
+            llm_wait_seconds=None,
+            attempted_profiles=[],
+            attempted_profile_labels=[],
+            invoked_at=datetime.now(timezone.utc).isoformat(),
+        ).model_dump(mode="python")
 
     def _rule_based_resolution(
         self,
@@ -383,36 +728,80 @@ class BomMapperAgent:
         *,
         trace_id: str | None = None,
     ) -> tuple[dict[str, Any], int, list[dict[str, Any]]]:
-        """Delegate to the original ComponentResolutionService.resolve_item."""
-        resolved, queue_count = self.resolution_service.resolve_item(
-            item, trace_id=trace_id
-        )
+        """Resolve using retrieval + heuristics without intermediate persistence."""
+        resolved = deepcopy(item)
         strategy_label = (
             "rules_only_degraded"
             if self.strategy == "rules_only_degraded"
             else "rules_only"
         )
-        # Build minimal audit records for traceability
+        queue_count = 0
         audits: list[dict[str, Any]] = []
-        raw_id = item.get("raw_id", "unknown")
-        for idx, mention in enumerate(item.get("bom_mentions", [])):
+        resolutions: list[dict[str, Any]] = []
+        unresolved_mentions: list[dict[str, Any]] = []
+        raw_id = str(item.get("raw_id", "unknown"))
+
+        with self._open_resolution_uow(trace_id=trace_id) as uow:
+            for idx, mention in enumerate(item.get("bom_mentions", [])):
+                retrieval = self.resolution_service.retrieve_candidates_for_mention(
+                    mention,
+                    uow=uow,
+                )
+                resolution = self._rule_based_resolution(
+                    mention=mention,
+                    candidates=retrieval["candidates"],
+                    evidence_uri=next(iter(item.get("evidence_refs", []) or []), None),
+                )
+                if resolution["resolution_status"] != "resolved":
+                    queue_count += 1
+                    unresolved_mentions.append(
+                        {
+                            "mentioned_name": resolution["mentioned_name"],
+                            "mentioned_vendor": resolution.get("mentioned_vendor"),
+                            "reason_codes": resolution.get("reason_codes", []),
+                        }
+                    )
+                resolutions.append(resolution)
+                audits.append(
+                    self._build_audit(
+                        raw_id=raw_id,
+                        mention_idx=idx,
+                        mentioned_name=str(
+                            mention.get("mentioned_name", "unknown")
+                        ).strip(),
+                        strategy_executed=strategy_label,
+                        llm_decision=None,
+                        fallback_reason=(
+                            "rules_only_by_strategy"
+                            if self.strategy == "rules_only"
+                            else "degraded_fallback"
+                        ),
+                        candidate_count=len(retrieval["candidates"]),
+                    )
+                )
+
+        if not item.get("bom_mentions"):
             audits.append(
-                self._build_audit(
+                self._build_no_signal_audit(
                     raw_id=raw_id,
-                    mention_idx=idx,
-                    mentioned_name=str(
-                        mention.get("mentioned_name", "unknown")
-                    ).strip(),
-                    strategy_executed=strategy_label,
-                    llm_decision=None,
-                    fallback_reason=(
-                        "rules_only_by_strategy"
-                        if self.strategy == "rules_only"
-                        else "degraded_fallback"
-                    ),
-                    candidate_count=0,
+                    reason="rules-only path found no AI BOM mentions to resolve",
                 )
             )
+
+        resolved["bom_resolutions"] = resolutions
+        resolved["source_metadata"] = {
+            **resolved.get("source_metadata", {}),
+            "bom_resolution_summary": {
+                "resolved": sum(
+                    1
+                    for resolution in resolutions
+                    if resolution["resolution_status"] == "resolved"
+                ),
+                "queued": queue_count,
+                "unresolved_mentions": unresolved_mentions,
+                "resolution_strategy": strategy_label,
+            },
+        }
         return resolved, queue_count, audits
 
     # ------------------------------------------------------------------
@@ -438,11 +827,15 @@ class BomMapperAgent:
             llm_reasoning = llm_decision.get("reasoning_summary", "n/a")
             selected = llm_decision.get("selected_component") or {}
             selected_code = selected.get("component_code")
+            reasoning_trace = list(llm_decision.get("reasoning_trace", []) or [])
+            evidence_quotes = list(llm_decision.get("evidence_quotes", []) or [])
         else:
             llm_confidence = 0.0
             llm_decision_val = "n/a"
             llm_reasoning = fallback_reason or "rules_only"
             selected_code = None
+            reasoning_trace = [fallback_reason or "Rules-only fallback executed."]
+            evidence_quotes = []
 
         return LlmBomResolutionAuditDTO(
             raw_id=raw_id,
@@ -460,6 +853,8 @@ class BomMapperAgent:
             fallback_reason=fallback_reason,
             candidate_count=candidate_count,
             selected_component_code=selected_code,
+            reasoning_trace=reasoning_trace[:8],
+            evidence_quotes=evidence_quotes[:8],
             llm_wait_seconds=llm_meta.get("wait_seconds"),
             attempted_profiles=list(llm_meta.get("attempted_profiles", []) or []),
             attempted_profile_labels=list(

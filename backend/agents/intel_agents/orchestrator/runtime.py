@@ -130,6 +130,22 @@ class Phase1GraphRuntime:
         )
         return self.invoke(state)
 
+    def invoke_live_run(
+        self,
+        *,
+        run_mode: RunMode = "bootstrap",
+        coverage_max_gap_fill_rounds: int = 1,
+    ) -> dict[str, Any]:
+        runtime_context = RuntimeContextDTO.default_live(
+            run_mode=run_mode,
+            coverage_max_gap_fill_rounds=coverage_max_gap_fill_rounds,
+        )
+        state = build_initial_state(
+            run_mode=run_mode,
+            runtime_context=runtime_context.model_dump(mode="python"),
+        )
+        return self.invoke(state)
+
 
 def _prune_completed_nodes(
     completed_nodes: list[str], resume_from_node: str
@@ -150,6 +166,7 @@ def _prune_completed_nodes(
         "semantic_dedup_and_merge",
         "resolve_ai_bom",
         "review_ai_bom_resolution",
+        "build_stix_graph",
         "score_confidence_and_novelty",
         "refresh_coverage_view",
         "coverage_gap_analysis",

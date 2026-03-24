@@ -45,6 +45,7 @@ class WP11GraphState(TypedDict, total=False):
     standardized_items: list[dict[str, Any]]
     llm_standardization_audits: Annotated[list[dict[str, Any]], operator.add]
     llm_bom_resolution_audits: Annotated[list[dict[str, Any]], operator.add]
+    stix_bundle_refs: Annotated[list[dict[str, Any]], operator.add]
     llm_dedup_judgments: Annotated[list[dict[str, Any]], operator.add]
     dedup_decisions: Annotated[list[dict[str, Any]], operator.add]
     stable_attack_records: list[dict[str, Any]]
@@ -111,6 +112,7 @@ def build_initial_state(
         "standardized_items": [],
         "llm_standardization_audits": [],
         "llm_bom_resolution_audits": [],
+        "stix_bundle_refs": [],
         "llm_dedup_judgments": [],
         "dedup_decisions": [],
         "stable_attack_records": [],

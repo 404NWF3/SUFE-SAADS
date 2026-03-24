@@ -46,12 +46,35 @@ class BomResolutionQueueItem:
     queue_id: int
     attack_id: UUID | None
     raw_id: UUID | None
+    mention_id: UUID | None
     mentioned_name: str
     mentioned_vendor: str | None
     mentioned_version: str | None
     reason_code: str
     queue_status: str
     resolved_component_id: UUID | None
+    candidate_snapshot: dict | None
+    reasoning_summary: str | None
     created_at: datetime
     resolved_at: datetime | None
+
+
+@dataclass(slots=True)
+class BomResolutionAudit:
+    audit_id: int
+    mention_id: UUID | None
+    attack_id: UUID | None
+    raw_id: UUID | None
+    strategy_requested: str
+    strategy_executed: str
+    llm_model: str
+    prompt_version: str
+    llm_decision: str
+    llm_confidence: Decimal
+    selected_component_code: str | None
+    reasoning_summary: str
+    reasoning_trace: list[str] | None
+    candidate_count: int
+    evidence_quotes: list[str] | None
+    created_at: datetime
 

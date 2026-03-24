@@ -434,37 +434,10 @@ class DedupMemoryService:
         normalized_mentions = _normalize_bom_mentions(bom_mentions)
         if not normalized_mentions:
             return "skipped_empty"
-        evidence_uri = next(
-            (str(ref).strip() for ref in evidence_refs if str(ref).strip()),
-            None,
-        )
-        try:
-            wrote_any = False
-            for bom in normalized_mentions:
-                bom_resolution = uow.components.find_component_by_alias(
-                    str(bom["mentioned_name"]).lower().replace(" ", "")
-                ) or uow.components.get_component_by_name(str(bom["mentioned_name"]))
-                if bom_resolution is None:
-                    continue
-                wrote_any = True
-                uow.components.upsert_attack_component_impact(
-                    attack_id=attack_id,
-                    component_id=str(bom_resolution.component_id),
-                    version_constraint_raw=bom.get("mentioned_version"),
-                    normalized_constraint=bom.get("mentioned_version"),
-                    match_mode="dedup_memory_sync",
-                    impact_scope="direct",
-                    confidence_score=float(bom.get("confidence_score", 0.7)),
-                    evidence_uri=evidence_uri,
-                )
-            return "ok" if wrote_any else "skipped_no_component_match"
-        except Exception as exc:
-            logger.warning(
-                "dedup_memory_persist_components failed attack_id=%s: %s",
-                attack_id,
-                exc,
-            )
-            return "write_failed"
+        # Component relationships are now owned by the AI BOM subgraph.
+        # Dedup only preserves weak mentions in the stable record and does not
+        # perform early rule-based writes into attack_component_impact.
+        return "deferred_to_ai_bom_subgraph"
 
     def _persist_cvss_hint(
         self,
