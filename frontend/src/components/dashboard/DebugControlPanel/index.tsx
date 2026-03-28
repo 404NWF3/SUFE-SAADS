@@ -6,6 +6,7 @@ import { RunControl } from "./RunControl"
 import { RunProgressTracker } from "./RunProgressTracker"
 import { AgentNodeCard } from "./AgentNodeCard"
 import { StateInspector } from "./StateInspector"
+import { LogViewer } from "@/components/dashboard/LogViewer"
 import styles from "./DebugControlPanel.module.css"
 
 export function DebugControlPanel() {
@@ -22,20 +23,19 @@ export function DebugControlPanel() {
 
   return (
     <div className={styles.panel}>
-      {/* Run control + progress */}
-      <div className={styles.runCard}>
-        <div className={styles.runCardHeader}>
-          <h2 className={styles.runCardTitle}>WP1-1 调试控制</h2>
-        </div>
-        <RunControl
-          activeRun={activeRun}
-          isStarting={isStarting}
-          isCancelling={isCancelling}
-          onStart={handleStart}
-          onCancel={handleCancel}
-        />
+      {/* Run control + progress（RunProgressTracker 作为 children 渲染在 RunControl 卡片内） */}
+      <RunControl
+        activeRun={activeRun}
+        isStarting={isStarting}
+        isCancelling={isCancelling}
+        onStart={handleStart}
+        onCancel={handleCancel}
+      >
         {activeRun && <RunProgressTracker run={activeRun} />}
-      </div>
+      </RunControl>
+
+      {/* Real-time log stream */}
+      <LogViewer streamUrl="/api/wp11/logs/stream" />
 
       {/* State inspector */}
       <StateInspector runId={activeRun?.run_id} />

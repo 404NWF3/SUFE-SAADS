@@ -3,11 +3,16 @@
 挂载点：/api/wp11
 
 端点：
+  GET  /status                    → WpStatusResponse（状态 + 指标快照）
+  GET  /metrics                   → WpMetricSeries[]（时序指标数据）
+  GET  /alerts                    → WpAlert[]（告警列表）
   GET  /state/latest              → WP11StateSnapshot
   GET  /runs/{run_id}/state       → WP11StateSnapshot
+  GET  /runtime/parameters        → RuntimeParameterCatalog
   GET  /nodes                     → WpNodeInfo[]
   POST /nodes/{node_name}/run     → 触发单节点
   POST /runs                      → 启动新 run → WpRunStatus
+  POST /runs/{run_id}/resume      → 从断点恢复
   GET  /runs/active               → WpRunStatus | 404
   DELETE /runs/{run_id}           → 取消 run
   GET  /logs/stream               → SSE 日志流
@@ -15,6 +20,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -44,6 +50,36 @@ router = APIRouter(prefix="/api/wp11")
 
 # 共享线程池（LangGraph invoke 是阻塞 I/O）
 _executor = ThreadPoolExecutor(max_workers=4)
+
+# ── 指标历史（模块级，线程安全：deque.append 受 GIL 保护）────────────
+_metrics_history: collections.deque[dict[str, Any]] = collections.deque(maxlen=200)
+
+
+def _derive_coverage_rate(state: dict[str, Any]) -> float:
+    """从节点状态推算 OWASP 覆盖率（%）。"""
+    # 优先使用 coverage_view 或 owasp_coverage 字段
+    for key in ("coverage_rate", "owasp_coverage", "coverage_view"):
+        val = state.get(key)
+        if isinstance(val, (int, float)) and val > 0:
+            return round(float(val), 1)
+    # 回退：用覆盖缺口推算（10 个 OWASP LLM Top 10 类别）
+    gaps = state.get("coverage_gaps")
+    if isinstance(gaps, list):
+        total = 10
+        uncovered = len(gaps)
+        covered = max(0, total - uncovered)
+        return round(covered / total * 100, 1)
+    return 0.0
+
+
+def _push_metrics_snapshot(state: dict[str, Any], ts: str | None = None) -> None:
+    """每次节点执行完成后推送一次指标快照（供 /metrics 端点使用）。"""
+    _metrics_history.append({
+        "ts": ts or datetime.now(timezone.utc).isoformat(),
+        "attack_pool_size": float(state.get("processed_count", 0)),
+        "coverage_rate": _derive_coverage_rate(state),
+        "new_intel_24h": float(state.get("new_attack_count", 0)),
+    })
 
 
 # ── 节点详情事件提取 ───────────────────────────────────────────────
@@ -321,6 +357,8 @@ async def _run_graph_in_background(
                         store.mark_node_done(node_name, "succeeded")
                         record.current_node = node_name
                         ts_now = datetime.now(timezone.utc).isoformat()
+                        # 推送指标快照（供 /metrics 端点使用）
+                        _push_metrics_snapshot(merged, ts_now)
                         error_count = len(node_state.get("errors") or [])
                         event = {
                             "type": "node_complete",
@@ -379,6 +417,148 @@ async def _run_graph_in_background(
 
 
 # ── 端点实现 ──────────────────────────────────────────────────────
+
+
+@router.get("/status")
+async def get_wp11_status(request: Request) -> dict[str, Any]:
+    """返回 WP1-1 运行状态快照（WpStatusResponse 格式）。"""
+    _, store = _get_deps(request)
+    active = store.get_active()
+    latest = store.get_latest()
+    record = active or latest
+    now_ts = datetime.now(timezone.utc).isoformat()
+
+    if record is None:
+        return {
+            "wp_id": "wp11",
+            "status": "idle",
+            "uptime_seconds": 0,
+            "version": "v0.1.0",
+            "metrics": {"attack_pool_size": 0, "coverage_rate": 0.0, "new_intel_24h": 0},
+            "current_tasks": [],
+            "last_updated": now_ts,
+        }
+
+    state = record.state_snapshot or {}
+
+    # 状态映射
+    if record.status in ("queued", "running"):
+        wp_status = "running"
+    elif record.status == "failed":
+        wp_status = "error"
+    elif record.errors:
+        wp_status = "warning"
+    else:
+        wp_status = "idle"
+
+    # uptime 计算
+    uptime = 0
+    if record.started_at:
+        try:
+            started_dt = datetime.fromisoformat(record.started_at)
+            uptime = max(0, int((datetime.now(timezone.utc) - started_dt).total_seconds()))
+        except (ValueError, TypeError):
+            pass
+
+    # 当前任务描述
+    current_tasks: list[str] = []
+    if record.current_node:
+        display = NODE_DISPLAY_NAMES.get(record.current_node, record.current_node)
+        current_tasks = [f"{display}: 执行中"]
+
+    return {
+        "wp_id": "wp11",
+        "status": wp_status,
+        "uptime_seconds": uptime,
+        "version": "v0.1.0",
+        "metrics": {
+            "attack_pool_size": state.get("processed_count", 0),
+            "coverage_rate": _derive_coverage_rate(state),
+            "new_intel_24h": state.get("new_attack_count", 0),
+        },
+        "current_tasks": current_tasks,
+        "last_updated": now_ts,
+    }
+
+
+@router.get("/metrics")
+async def get_wp11_metrics(
+    request: Request,
+    keys: str = "",
+    window: str = "48h",
+) -> list[dict[str, Any]]:
+    """返回时序指标数据（WpMetricSeries[] 格式）。
+    keys: 逗号分隔的指标键（attack_pool_size, coverage_rate, new_intel_24h）
+    window: 时间窗口（暂未过滤，返回全部历史）
+    """
+    key_list = [k.strip() for k in keys.split(",") if k.strip()]
+    if not key_list:
+        return []
+
+    if not _metrics_history:
+        # 无历史数据：返回来自当前状态快照的单点数据（如果有）
+        _, store = _get_deps(request)
+        record = store.get_active() or store.get_latest()
+        if record and record.state_snapshot:
+            state = record.state_snapshot
+            ts = datetime.now(timezone.utc).isoformat()
+            snap = {
+                "attack_pool_size": float(state.get("processed_count", 0)),
+                "coverage_rate": _derive_coverage_rate(state),
+                "new_intel_24h": float(state.get("new_attack_count", 0)),
+            }
+            return [
+                {"key": k, "points": [{"timestamp": ts, "value": snap.get(k, 0.0)}]}
+                for k in key_list
+            ]
+        return [{"key": k, "points": []} for k in key_list]
+
+    result = []
+    for key in key_list:
+        points = [
+            {"timestamp": snap["ts"], "value": snap.get(key, 0.0)}
+            for snap in _metrics_history
+            if key in snap
+        ]
+        result.append({"key": key, "points": points})
+    return result
+
+
+@router.get("/alerts")
+async def get_wp11_alerts(
+    request: Request,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """从最新运行的 alert_candidates 中返回 WpAlert[] 格式告警列表。"""
+    _, store = _get_deps(request)
+    rec = store.get_active() or store.get_latest()
+    if not rec or not rec.state_snapshot:
+        return []
+
+    alert_candidates: list[Any] = rec.state_snapshot.get("alert_candidates") or []
+    run_prefix = rec.run_id[:8]
+    result: list[dict[str, Any]] = []
+
+    for i, a in enumerate(alert_candidates[:limit]):
+        sev = (a.get("severity") or "LOW").upper()
+        if sev not in ("HIGH", "MEDIUM", "LOW"):
+            sev = "LOW"
+        cvss_raw = a.get("cvss") or a.get("score")
+        cvss_val: float | None = float(cvss_raw) if isinstance(cvss_raw, (int, float)) else None
+        created_at: str = (
+            a.get("created_at")
+            or a.get("timestamp")
+            or datetime.now(timezone.utc).isoformat()
+        )
+        result.append({
+            "id": a.get("id") or f"alert-{i + 1:03d}-{run_prefix}",
+            "severity": sev,
+            "title": str(a.get("title") or a.get("summary") or "告警"),
+            "cvss": cvss_val,
+            "created_at": created_at,
+        })
+
+    return result
 
 
 @router.get("/state/latest")

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import type { ReactNode } from "react"
 import type { WpRunRequest, WpRunStatus, RunMode } from "@/lib/types/dashboard"
 import { RUN_MODE_LABELS } from "@/lib/types/dashboard"
 import styles from "./DebugControlPanel.module.css"
@@ -11,6 +12,8 @@ interface RunControlProps {
   isCancelling: boolean
   onStart: (req: WpRunRequest) => Promise<void>
   onCancel: (runId: string) => Promise<void>
+  /** 渲染在 runCard 内部（用于插入 RunProgressTracker）*/
+  children?: ReactNode
 }
 
 const RUN_MODES: RunMode[] = [
@@ -27,8 +30,9 @@ export function RunControl({
   isCancelling,
   onStart,
   onCancel,
+  children,
 }: RunControlProps) {
-  const [mode, setMode] = useState<RunMode>("incremental")
+  const [mode, setMode] = useState<RunMode>("bootstrap")
 
   const isRunning =
     activeRun?.status === "running" || activeRun?.status === "queued"
@@ -85,6 +89,7 @@ export function RunControl({
           </button>
         )}
       </div>
+      {children}
     </div>
   )
 }
