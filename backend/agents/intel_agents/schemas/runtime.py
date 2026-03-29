@@ -90,6 +90,9 @@ class RuntimeContextDTO(_StrictModel):
     )
     llm_resume_on_exhausted_retry: bool = True
     standardization_max_concurrency: int = Field(default=2, ge=1, le=32)
+    bom_resolve_max_concurrency: int = Field(default=4, ge=1, le=32)
+    bom_review_max_concurrency: int = Field(default=4, ge=1, le=32)
+    stix_max_concurrency: int = Field(default=4, ge=1, le=32)
     stix_auto_publish_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
     bom_auto_publish_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
     review_queue_threshold: float = Field(default=0.60, ge=0.0, le=1.0)
@@ -206,6 +209,9 @@ class RuntimeContextDTO(_StrictModel):
                 "llm_short_wait_threshold_seconds": 60.0,
                 "llm_resume_on_exhausted_retry": True,
                 "standardization_max_concurrency": standardization_default_concurrency,
+                "bom_resolve_max_concurrency": 4,
+                "bom_review_max_concurrency": 4,
+                "stix_max_concurrency": 4,
                 "stix_auto_publish_threshold": 0.85,
                 "bom_auto_publish_threshold": 0.85,
                 "review_queue_threshold": 0.60,
@@ -322,6 +328,9 @@ class RuntimeContextDTO(_StrictModel):
                 "llm_short_wait_threshold_seconds": 15.0,
                 "llm_resume_on_exhausted_retry": True,
                 "standardization_max_concurrency": 2,
+                "bom_resolve_max_concurrency": 1,
+                "bom_review_max_concurrency": 1,
+                "stix_max_concurrency": 1,
                 "stix_auto_publish_threshold": 0.85,
                 "bom_auto_publish_threshold": 0.85,
                 "review_queue_threshold": 0.60,

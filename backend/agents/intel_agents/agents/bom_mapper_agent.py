@@ -116,8 +116,6 @@ class BomMapperAgent:
             return self._rules_only_resolve_item(item, trace_id=trace_id)
 
         max_workers = min(self.max_concurrency, max(1, len(items)))
-        if self.strategy in ("llm_required", "llm_optional"):
-            max_workers = 1
         results: list[Any] = [None] * len(items)
         if max_workers == 1:
             for idx, item in enumerate(items):
@@ -404,42 +402,52 @@ class BomMapperAgent:
                 )
             ] = audit
 
-        queue_count = 0
-        persisted_items: list[dict[str, Any]] = []
-        try:
-            with UnitOfWork(
-                context=SqlContext(trace_id=trace_id, agent_name="bom_mapper_agent_persist")
-            ) as uow:
-                AiComponentSeedService(uow).ensure_seeded(trace_id=trace_id)
-                for item in items:
-                    persisted_item, item_queue_count = self._persist_item(
-                        item,
-                        audit_lookup=audit_lookup,
-                        uow=uow,
-                    )
-                    persisted_items.append(persisted_item)
-                    queue_count += item_queue_count
-        except Exception as exc:
-            for item in items:
-                persisted_items.append(
-                    {
-                        **deepcopy(item),
-                        "source_metadata": {
-                            **item.get("source_metadata", {}),
-                            "bom_persist_fallback": {
-                                "active": True,
-                                "error_type": type(exc).__name__,
-                                "error_message": str(exc)[:300],
-                            },
+        # Seed AI component taxonomy once upfront (shared reference data)
+        with UnitOfWork(
+            context=SqlContext(trace_id=trace_id, agent_name="bom_mapper_agent_seed")
+        ) as seed_uow:
+            AiComponentSeedService(seed_uow).ensure_seeded(trace_id=trace_id)
+
+        def _persist_one(item: dict[str, Any]) -> tuple[dict[str, Any], int]:
+            try:
+                with UnitOfWork(
+                    context=SqlContext(trace_id=trace_id, agent_name="bom_mapper_agent_persist")
+                ) as uow:
+                    return self._persist_item(item, audit_lookup=audit_lookup, uow=uow)
+            except Exception as exc:
+                fallback = {
+                    **deepcopy(item),
+                    "source_metadata": {
+                        **item.get("source_metadata", {}),
+                        "bom_persist_fallback": {
+                            "active": True,
+                            "error_type": type(exc).__name__,
+                            "error_message": str(exc)[:300],
                         },
-                    }
+                    },
+                }
+                item_queue_count = sum(
+                    1
+                    for r in fallback.get("bom_resolutions", [])
+                    if r.get("resolution_status") != "resolved"
                 )
-            queue_count = sum(
-                1
-                for item in persisted_items
-                for resolution in item.get("bom_resolutions", [])
-                if resolution.get("resolution_status") != "resolved"
-            )
+                return fallback, item_queue_count
+
+        max_workers = min(self.max_concurrency, max(1, len(items)))
+        results: list[tuple[dict[str, Any], int]] = [None] * len(items)  # type: ignore[list-item]
+        if max_workers == 1:
+            for idx, item in enumerate(items):
+                results[idx] = _persist_one(item)
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_idx = {
+                    executor.submit(_persist_one, item): i for i, item in enumerate(items)
+                }
+                for future in as_completed(future_to_idx):
+                    results[future_to_idx[future]] = future.result()
+
+        persisted_items = [r[0] for r in results]
+        queue_count = sum(r[1] for r in results)
         return persisted_items, queue_count
 
     def _persist_item(

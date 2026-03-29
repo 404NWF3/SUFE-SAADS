@@ -24,7 +24,7 @@ import collections
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -247,6 +247,83 @@ def _extract_node_details(
     return events
 
 
+# ── 每个节点需要展示的关键状态字段（与 main.py StepDebugger 保持一致）──────
+NODE_FOCUS: dict[str, list[str]] = {
+    "load_runtime_context": ["run_mode", "run_status", "runtime_context"],
+    "supervisor_plan": ["collection_plan", "llm_planning_audits"],
+    "dispatch_collection": ["collector_plans", "collection_coordination"],
+    "collect_structured_sources": ["raw_items", "source_execution_stats", "query_telemetry"],
+    "collect_code_sources": ["raw_items", "source_execution_stats", "query_telemetry"],
+    "collect_paper_sources": ["raw_items", "source_execution_stats"],
+    "collect_community_sources": ["raw_items", "source_execution_stats"],
+    "collect_advisory_sources": ["raw_items", "source_execution_stats"],
+    "store_raw_records": ["stored_raw_ids", "stored_raw_records", "ingest_audits"],
+    "assess_collection_yield": [
+        "collection_yield_summary", "reflection_needed", "reflection_rationale",
+    ],
+    "reflect_search_strategy": [
+        "llm_reflection_audits", "reflection_round", "reflection_needed",
+    ],
+    "parse_and_standardize": [
+        "standardized_items", "llm_standardization_audits", "processed_count",
+    ],
+    "semantic_dedup_and_merge": [
+        "dedup_decisions", "llm_dedup_judgments", "dedup_merged_count",
+        "stable_attack_records", "dedup_persist_summary", "dedup_audit_summary",
+    ],
+    "resolve_ai_bom": [
+        "standardized_items", "llm_bom_resolution_audits", "bom_queue_count",
+    ],
+    "build_stix_graph": ["standardized_items", "stix_bundle_refs"],
+    "score_confidence_and_novelty": ["standardized_items", "new_attack_count"],
+    "refresh_coverage_view": ["runtime_context"],
+    "coverage_gap_analysis": [
+        "coverage_gaps", "gap_fill_needed", "gap_fill_rationale", "gap_fill_round",
+    ],
+    "generate_alerts": ["alert_candidates"],
+    "finalize_run": ["run_status", "finished_at", "errors"],
+}
+
+# 节点 verbose 数据最大字节限制（超大字段截断，避免 SSE 拥塞）
+_VERBOSE_VALUE_MAX = 8000
+
+
+def _push_verbose_state_events(
+    node_name: str,
+    node_state: dict[str, Any],
+    ts: str,
+    put_fn: "Callable[[dict[str, Any]], None]",
+) -> None:
+    """将节点状态中 NODE_FOCUS 指定的关键字段作为 node_verbose 事件推送到 SSE 流。
+    这实现了与 `python main.py --live --verbose` 终端输出等价的详细日志。
+    """
+    focus_keys = NODE_FOCUS.get(node_name)
+    if not focus_keys:
+        return
+    display = NODE_DISPLAY_NAMES.get(node_name, node_name)
+    for key in focus_keys:
+        value = node_state.get(key)
+        if value is None:
+            continue
+        try:
+            value_json = json.dumps(value, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            value_json = repr(value)
+        truncated = False
+        if len(value_json) > _VERBOSE_VALUE_MAX:
+            value_json = value_json[:_VERBOSE_VALUE_MAX]
+            truncated = True
+        put_fn({
+            "type": "node_verbose",
+            "node": node_name,
+            "display_name": display,
+            "ts": ts,
+            "key": key,
+            "value": value_json,
+            "truncated": truncated,
+        })
+
+
 # ── Pydantic 请求/响应模型 ─────────────────────────────────────────
 
 
@@ -346,11 +423,28 @@ async def _run_graph_in_background(
     async def _stream_events() -> None:
         """在线程中运行 app.stream()，通过 queue 推送 SSE 事件。"""
         def _sync_stream() -> None:
+            import time as _time
             run_id = initial_state["run_id"]
             config: Any = {"configurable": {"thread_id": run_id}}
+
+            # ── 推送运行头（等价于 StepDebugger 的 banner）──────────
+            ctx = initial_state.get("runtime_context") or {}
+            _put({
+                "type": "run_header",
+                "run_id": run_id,
+                "run_mode": initial_state.get("run_mode", "bootstrap"),
+                "source_runtime_mode": ctx.get("source_runtime_mode", "?"),
+                "trace_id": initial_state.get("trace_id", ""),
+                "llm_model": ctx.get("llm_model", ""),
+                "ts": datetime.now(timezone.utc).isoformat(),
+            })
+
             try:
+                node_index = 0
                 for chunk in runtime.app.stream(initial_state, config=config):
                     for node_name, node_state in chunk.items():
+                        node_start = _time.perf_counter()
+                        node_index += 1
                         # 更新 store
                         merged = {**initial_state, **node_state}
                         store.update_from_state(run_id, merged)
@@ -360,6 +454,7 @@ async def _run_graph_in_background(
                         # 推送指标快照（供 /metrics 端点使用）
                         _push_metrics_snapshot(merged, ts_now)
                         error_count = len(node_state.get("errors") or [])
+                        elapsed_ms = (_time.perf_counter() - node_start) * 1000.0
                         event = {
                             "type": "node_complete",
                             "node": node_name,
@@ -367,11 +462,15 @@ async def _run_graph_in_background(
                             "percent": record.percent,
                             "error_count": error_count,
                             "ts": ts_now,
+                            "node_index": node_index,
+                            "elapsed_ms": round(elapsed_ms, 1),
                         }
                         _put(event)
                         # 推送节点内详情事件（审计数据、采集统计、LLM 置信度等）
                         for detail_evt in _extract_node_details(node_name, node_state, ts_now):
                             _put(detail_evt)
+                        # 推送 verbose 状态（NODE_FOCUS 关键字段的完整 JSON）
+                        _push_verbose_state_events(node_name, node_state, ts_now, _put)
             except Exception as exc:
                 error_event = {
                     "type": "error",

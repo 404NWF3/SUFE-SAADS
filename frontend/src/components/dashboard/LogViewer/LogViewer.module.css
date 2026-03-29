@@ -194,3 +194,67 @@
 .levelTagINFO  { color: var(--text-muted); }
 .levelTagWARN  { color: var(--status-warning, #b45309); }
 .levelTagERROR { color: var(--status-error, #b91c1c); }
+
+/* ── Expanded verbose row ─────────────────────────────── */
+.rowExpanded {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  border-bottom: 1px solid rgba(23,21,18,0.08);
+  border-left: 2px solid rgba(23,21,18,0.12);
+  background: rgba(23,21,18,0.02);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.rowExpandedHeader {
+  display: grid;
+  grid-template-columns: 9ch 5ch 16ch 1fr auto auto;
+  gap: 0.5ch;
+  align-items: center;
+  padding: 0 0.875rem;
+  height: 24px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.rowExpandedHeader:hover { background: rgba(23,21,18,0.05); }
+
+.expandToggle {
+  font-size: 0.65rem;
+  color: var(--accent, #5a7);
+  cursor: pointer;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.copyJsonBtn {
+  font-size: 0.62rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color 120ms;
+  margin-left: 0.5ch;
+}
+.copyJsonBtn:hover { color: var(--text); border-color: var(--accent); }
+
+.verboseJson {
+  margin: 0;
+  padding: 0.5rem 0.875rem 0.5rem 2rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-y: auto;
+  max-height: 320px;
+  background: rgba(23,21,18,0.03);
+  border-top: 1px solid rgba(23,21,18,0.06);
+}

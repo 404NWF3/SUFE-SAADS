@@ -56,6 +56,13 @@ export const WpLogEntrySchema = z.object({
 })
 export type WpLogEntry = z.infer<typeof WpLogEntrySchema>
 
+/** 扩展日志条目：携带可展开的 verbose JSON 数据 */
+export type WpVerboseLogEntry = WpLogEntry & {
+  verboseKey?: string
+  verboseJson?: string
+  truncated?: boolean
+}
+
 /* ── 工具函数 ──────────────────────────────────────────────── */
 
 /** 将 uptime_seconds 格式化为 "Xd Xh Xm" */

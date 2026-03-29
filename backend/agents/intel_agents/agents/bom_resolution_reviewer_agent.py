@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from typing import Any
 
@@ -17,8 +18,10 @@ class BomResolutionReviewerAgent:
         llm_temperature: float = 0.0,
         validate_online: bool = False,
         llm_runtime_config: dict[str, Any] | None = None,
+        max_concurrency: int = 4,
     ) -> None:
         self.strategy = strategy
+        self.max_concurrency = max_concurrency
         self.llm_runtime_config = llm_runtime_config or {}
         self._llm: LangChainLlmBomReviewer | None = None
         if strategy in ("llm_required", "llm_optional"):
@@ -31,9 +34,7 @@ class BomResolutionReviewerAgent:
                 self._llm.validate_connectivity()
 
     def review_batch(self, items: list[dict[str, Any]]) -> dict[str, Any]:
-        reviewed_items: list[dict[str, Any]] = []
-        queue_count = 0
-        for item in items:
+        def _review_one(item: dict[str, Any]) -> tuple[dict[str, Any], int]:
             reviewed = deepcopy(item)
             attack_context = {
                 "attack_name": reviewed.get("canonical_name", ""),
@@ -47,6 +48,7 @@ class BomResolutionReviewerAgent:
                 or reviewed.get("summary", "")
             )
             resolutions: list[dict[str, Any]] = []
+            item_queue_count = 0
             for resolution in reviewed.get("bom_resolutions", []):
                 checked = self.review_resolution(
                     resolution,
@@ -54,7 +56,7 @@ class BomResolutionReviewerAgent:
                     evidence_text=evidence_text,
                 )
                 if checked.get("resolution_status") != "resolved":
-                    queue_count += 1
+                    item_queue_count += 1
                 resolutions.append(checked)
             reviewed["bom_resolutions"] = resolutions
             reviewed["source_metadata"] = {
@@ -77,7 +79,23 @@ class BomResolutionReviewerAgent:
                     ),
                 },
             }
-            reviewed_items.append(reviewed)
+            return reviewed, item_queue_count
+
+        max_workers = min(self.max_concurrency, max(1, len(items)))
+        results: list[tuple[dict[str, Any], int]] = [None] * len(items)  # type: ignore[list-item]
+        if max_workers == 1:
+            for idx, item in enumerate(items):
+                results[idx] = _review_one(item)
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_idx = {
+                    executor.submit(_review_one, item): i for i, item in enumerate(items)
+                }
+                for future in as_completed(future_to_idx):
+                    results[future_to_idx[future]] = future.result()
+
+        reviewed_items = [r[0] for r in results]
+        queue_count = sum(r[1] for r in results)
         return {
             "standardized_items": reviewed_items,
             "bom_queue_count": queue_count,

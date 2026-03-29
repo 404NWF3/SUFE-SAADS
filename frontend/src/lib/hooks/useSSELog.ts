@@ -3,13 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { USE_MOCK_API } from "@/lib/api/client"
 import { MOCK_LOGS } from "@/lib/api/mock"
-import { WpLogEntrySchema, type WpLogEntry } from "@/lib/types/wp"
+import { WpLogEntrySchema, type WpLogEntry, type WpVerboseLogEntry } from "@/lib/types/wp"
 
 /**
  * 将后端 SSE 事件（{type, node, ts, ...}）或 mock 日志格式（{timestamp, level, ...}）
- * 统一转换为 WpLogEntry。无法识别的事件返回 null（调用方跳过）。
+ * 统一转换为 WpVerboseLogEntry。无法识别的事件返回 null（调用方跳过）。
+ *
+ * 新增事件类型：
+ *  - run_header  → 运行头（等价于 StepDebugger 的 banner）
+ *  - node_verbose → 节点状态关键字段 JSON（等价于 --verbose 输出）
  */
-function toLogEntry(raw: unknown): WpLogEntry | null {
+function toLogEntry(raw: unknown): WpVerboseLogEntry | null {
   // 先尝试 mock / 直接兼容格式
   const direct = WpLogEntrySchema.safeParse(raw)
   if (direct.success) return direct.data
@@ -20,6 +24,13 @@ function toLogEntry(raw: unknown): WpLogEntry | null {
     typeof evt.ts === "string" ? evt.ts : new Date().toISOString()
 
   switch (evt.type) {
+    case "run_header":
+      return {
+        timestamp: ts,
+        level: "INFO",
+        source: "系统",
+        message: `══ SAADS WP1-1 Intel Pipeline ══  run_id: ${evt.run_id ?? "?"}  mode: ${evt.run_mode ?? "?"}  runtime: ${evt.source_runtime_mode ?? "?"}  model: ${evt.llm_model ?? "?"}`,
+      }
     case "init":
       return {
         timestamp: ts,
@@ -30,11 +41,13 @@ function toLogEntry(raw: unknown): WpLogEntry | null {
     case "node_complete": {
       const errCount = typeof evt.error_count === "number" ? evt.error_count : 0
       const errSuffix = errCount > 0 ? ` ⚠ ${errCount} 个节点错误` : ""
+      const idx = typeof evt.node_index === "number" ? `[${String(evt.node_index).padStart(2, "0")}] ` : ""
+      const elapsed = typeof evt.elapsed_ms === "number" ? ` ${evt.elapsed_ms.toFixed(1)}ms` : ""
       return {
         timestamp: ts,
         level: errCount > 0 ? "WARN" : "INFO",
         source: String(evt.display_name ?? evt.node ?? "节点"),
-        message: `完成 — ${evt.percent ?? 0}%${errSuffix}`,
+        message: `${idx}完成 — ${evt.percent ?? 0}%${elapsed}${errSuffix}`,
       }
     }
     case "node_detail":
@@ -44,6 +57,21 @@ function toLogEntry(raw: unknown): WpLogEntry | null {
         source: String(evt.display_name ?? evt.node ?? "详情"),
         message: String(evt.message ?? ""),
       }
+    case "node_verbose": {
+      const key = String(evt.key ?? "?")
+      const valueStr = String(evt.value ?? "")
+      // 单行预览：取前 120 字符
+      const preview = valueStr.length > 120 ? valueStr.slice(0, 120) + "…" : valueStr
+      return {
+        timestamp: ts,
+        level: "DEBUG",
+        source: String(evt.display_name ?? evt.node ?? "详情"),
+        message: `${key}: ${preview}`,
+        verboseKey: key,
+        verboseJson: valueStr,
+        truncated: evt.truncated === true,
+      }
+    }
     case "node_error_detail":
       return {
         timestamp: ts,
@@ -92,13 +120,13 @@ export function useSSELog(
   url: string,
   { maxEntries = 500, enabled = true }: UseSSELogOptions = {}
 ): {
-  entries: WpLogEntry[]
+  entries: WpVerboseLogEntry[]
   status: SSELogStatus
   retryCount: number
   reconnect: () => void
   clear: () => void
 } {
-  const [entries, setEntries] = useState<WpLogEntry[]>([])
+  const [entries, setEntries] = useState<WpVerboseLogEntry[]>([])
   const [status, setStatus] = useState<SSELogStatus>("closed")
   const [retryCount, setRetryCount] = useState(0)
 
@@ -112,7 +140,7 @@ export function useSSELog(
   enabledRef.current = enabled
 
   const pushEntry = useCallback(
-    (entry: WpLogEntry) => {
+    (entry: WpVerboseLogEntry) => {
       setEntries((prev) => {
         const next = [...prev, entry]
         return next.length > maxEntries ? next.slice(next.length - maxEntries) : next

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -23,19 +24,22 @@ class StixSubgraphState(TypedDict, total=False):
 
 def _extract_graphs(state: StixSubgraphState) -> StixSubgraphState:
     context = RuntimeContextDTO.model_validate(state.get("runtime_context") or {})
-    extractor = LangChainLlmStixExtractor(
-        model=context.llm_model,
-        temperature=context.llm_temperature,
-        runtime_config=context.model_dump(mode="python"),
-    )
-    reviewer = LangChainLlmStixReviewer(
-        model=context.llm_model,
-        temperature=context.llm_temperature,
-        runtime_config=context.model_dump(mode="python"),
-    )
+    runtime_config = context.model_dump(mode="python")
     service = StixGraphService()
-    drafts: list[dict[str, Any]] = []
-    for item in state.get("standardized_items", []):
+    items = list(state.get("standardized_items", []))
+
+    def _process_one(item: dict[str, Any]) -> dict[str, Any]:
+        # Each worker constructs its own LLM clients (thread-safe, stateless HTTP)
+        extractor = LangChainLlmStixExtractor(
+            model=context.llm_model,
+            temperature=context.llm_temperature,
+            runtime_config=runtime_config,
+        )
+        reviewer = LangChainLlmStixReviewer(
+            model=context.llm_model,
+            temperature=context.llm_temperature,
+            runtime_config=runtime_config,
+        )
         payload = service.build_extraction_payload(item)
         attack_code = str(payload.get("attack_code") or "")
         if context.stix_strategy == "rules_only_degraded":
@@ -134,28 +138,40 @@ def _extract_graphs(state: StixSubgraphState) -> StixSubgraphState:
                                 "Materialization failed, so the draft was downgraded to review queue.",
                             ],
                         }
-        drafts.append(
-            {
-                "attack_code": attack_code,
-                "graph_draft": graph_draft,
-                "validation": validation,
-                "review": review,
-                "materialized": materialized,
-                "extractor_model": extractor.last_invocation_meta.get(
-                    "llm_model",
-                    extractor.model,
-                ),
-                "reviewer_model": reviewer.last_invocation_meta.get(
-                    "llm_model",
-                    reviewer.model,
-                ),
-                "prompt_version": extractor.PROMPT_VERSION,
+        return {
+            "attack_code": attack_code,
+            "graph_draft": graph_draft,
+            "validation": validation,
+            "review": review,
+            "materialized": materialized,
+            "extractor_model": extractor.last_invocation_meta.get(
+                "llm_model",
+                extractor.model,
+            ),
+            "reviewer_model": reviewer.last_invocation_meta.get(
+                "llm_model",
+                reviewer.model,
+            ),
+            "prompt_version": extractor.PROMPT_VERSION,
+        }
+
+    max_workers = min(context.stix_max_concurrency, max(1, len(items)))
+    drafts: list[dict[str, Any]] = [None] * len(items)  # type: ignore[list-item]
+    if max_workers == 1:
+        for idx, item in enumerate(items):
+            drafts[idx] = _process_one(item)
+    else:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {
+                executor.submit(_process_one, item): i for i, item in enumerate(items)
             }
-        )
+            for future in as_completed(future_to_idx):
+                drafts[future_to_idx[future]] = future.result()
     return {"stix_drafts": drafts}
 
 
 def _persist_graphs(state: StixSubgraphState) -> StixSubgraphState:
+    context = RuntimeContextDTO.model_validate(state.get("runtime_context") or {})
     service = StixGraphService()
     items = list(state.get("standardized_items", []))
     draft_map = {
@@ -163,14 +179,14 @@ def _persist_graphs(state: StixSubgraphState) -> StixSubgraphState:
         for row in state.get("stix_drafts", [])
         if row.get("attack_code")
     }
-    bundle_refs: list[dict[str, Any]] = []
-    updated_items: list[dict[str, Any]] = []
-    for item in items:
+    trace_id = state.get("trace_id")
+    runtime_context = state.get("runtime_context", {})
+
+    def _persist_one(item: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
         attack_code = str(item.get("attack_code") or item.get("stable_attack_code") or "")
         draft_row = draft_map.get(attack_code)
         if draft_row is None:
-            updated_items.append(item)
-            continue
+            return item, None
         persisted = service.persist_bundle(
             item=item,
             graph_draft=draft_row["graph_draft"],
@@ -180,21 +196,26 @@ def _persist_graphs(state: StixSubgraphState) -> StixSubgraphState:
             extractor_model=str(draft_row["extractor_model"]),
             reviewer_model=str(draft_row["reviewer_model"]),
             prompt_version=str(draft_row["prompt_version"]),
-            trace_id=state.get("trace_id"),
-            runtime_context=state.get("runtime_context", {}),
+            trace_id=trace_id,
+            runtime_context=runtime_context,
         )
-        bundle_refs.append(
-            {
-                "attack_code": attack_code,
-                **persisted,
+        return {**item, **persisted}, {"attack_code": attack_code, **persisted}
+
+    max_workers = min(context.stix_max_concurrency, max(1, len(items)))
+    pair_results: list[tuple[dict[str, Any], dict[str, Any] | None]] = [None] * len(items)  # type: ignore[list-item]
+    if max_workers == 1:
+        for idx, item in enumerate(items):
+            pair_results[idx] = _persist_one(item)
+    else:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {
+                executor.submit(_persist_one, item): i for i, item in enumerate(items)
             }
-        )
-        updated_items.append(
-            {
-                **item,
-                **persisted,
-            }
-        )
+            for future in as_completed(future_to_idx):
+                pair_results[future_to_idx[future]] = future.result()
+
+    updated_items = [p[0] for p in pair_results]
+    bundle_refs = [p[1] for p in pair_results if p[1] is not None]
     return {
         "standardized_items": updated_items,
         "stix_bundle_refs": bundle_refs,

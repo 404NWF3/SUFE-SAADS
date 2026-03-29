@@ -25,6 +25,7 @@ def _resolve_bom(state: AiBomSubgraphState) -> AiBomSubgraphState:
         llm_temperature=context.llm_temperature,
         validate_online=context.validate_llm_online,
         llm_runtime_config=context.model_dump(mode="python"),
+        max_concurrency=context.bom_resolve_max_concurrency,
     ).resolve_batch(
         state.get("standardized_items", []),
         trace_id=state.get("trace_id"),
@@ -50,6 +51,7 @@ def _review_bom(state: AiBomSubgraphState) -> AiBomSubgraphState:
         llm_temperature=context.llm_temperature,
         validate_online=context.validate_llm_online,
         llm_runtime_config=context.model_dump(mode="python"),
+        max_concurrency=context.bom_review_max_concurrency,
     ).review_batch(state.get("standardized_items", []))
     pending_summary = {
         **state.get("runtime_context", {}).get("pending_queue_summary", {}),
@@ -74,6 +76,7 @@ def _persist_bom(state: AiBomSubgraphState) -> AiBomSubgraphState:
         llm_temperature=context.llm_temperature,
         validate_online=context.validate_llm_online,
         llm_runtime_config=context.model_dump(mode="python"),
+        max_concurrency=context.bom_resolve_max_concurrency,
     ).persist_batch(
         state.get("standardized_items", []),
         audits=state.get("llm_bom_resolution_audits", []),

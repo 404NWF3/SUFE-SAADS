@@ -8,11 +8,12 @@ import {
 } from "react"
 import { List, useListRef } from "react-window"
 import { useSSELog } from "@/lib/hooks/useSSELog"
-import type { WpLogEntry } from "@/lib/types/wp"
+import type { WpVerboseLogEntry } from "@/lib/types/wp"
 import { LogRow, type LogRowData } from "./LogRow"
 import styles from "./LogViewer.module.css"
 
 const ROW_HEIGHT = 24
+const EXPANDED_HEIGHT = 340  // 24px header + ~316px JSON block
 const LIST_HEIGHT = 400
 
 const LEVELS = ["DEBUG", "INFO", "WARN", "ERROR"] as const
@@ -43,12 +44,13 @@ export function LogViewer({ streamUrl, height = LIST_HEIGHT }: LogViewerProps) {
   const [levelFilter, setLevelFilter] = useState<Set<Level>>(new Set(LEVELS))
   const [sourceFilter, setSourceFilter] = useState("")
   const [autoScroll, setAutoScroll] = useState(true)
+  const [expandedSet, setExpandedSet] = useState<Set<number>>(new Set())
   const listRef = useListRef(null)
 
   const { entries, status, retryCount, reconnect, clear } = useSSELog(streamUrl)
 
   // Filter entries
-  const filtered: WpLogEntry[] = useMemo(() => {
+  const filtered: WpVerboseLogEntry[] = useMemo(() => {
     return entries.filter((e) => {
       if (!levelFilter.has(e.level as Level)) return false
       if (sourceFilter && !e.source.toLowerCase().includes(sourceFilter.toLowerCase()))
@@ -56,6 +58,11 @@ export function LogViewer({ streamUrl, height = LIST_HEIGHT }: LogViewerProps) {
       return true
     })
   }, [entries, levelFilter, sourceFilter])
+
+  // Reset expanded set when filter changes (indices shift)
+  useEffect(() => {
+    setExpandedSet(new Set())
+  }, [levelFilter, sourceFilter])
 
   // Auto-scroll to bottom on new entries
   useEffect(() => {
@@ -76,7 +83,40 @@ export function LogViewer({ streamUrl, height = LIST_HEIGHT }: LogViewerProps) {
     })
   }, [])
 
-  const rowProps: LogRowData = useMemo(() => ({ entries: filtered }), [filtered])
+  const handleToggle = useCallback((index: number) => {
+    setExpandedSet((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) {
+        next.delete(index)
+      } else {
+        next.add(index)
+      }
+      return next
+    })
+  }, [])
+
+  const handleClear = useCallback(() => {
+    clear()
+    setExpandedSet(new Set())
+  }, [clear])
+
+  const rowProps: LogRowData = useMemo(
+    () => ({ entries: filtered, expandedSet, onToggle: handleToggle }),
+    [filtered, expandedSet, handleToggle]
+  )
+
+  const getRowHeight = useCallback(
+    (index: number) => {
+      if (expandedSet.has(index) && filtered[index]?.verboseJson) {
+        // Estimate height from JSON content lines
+        const json = filtered[index].verboseJson!
+        const lineCount = Math.min(json.split("\n").length + 5, 20)
+        return Math.max(ROW_HEIGHT + lineCount * 16, EXPANDED_HEIGHT)
+      }
+      return ROW_HEIGHT
+    },
+    [expandedSet, filtered]
+  )
 
   return (
     <div className={styles.viewer ?? ""}>
@@ -113,7 +153,7 @@ export function LogViewer({ streamUrl, height = LIST_HEIGHT }: LogViewerProps) {
           </button>
         ))}
         <span style={{ fontSize: "0.65rem", color: "var(--text-faint)", fontFamily: "var(--font-mono)" }}>
-          DEBUG=节点详情
+          DEBUG=节点详情 ▶=可展开
         </span>
         <input
           type="text"
@@ -131,7 +171,7 @@ export function LogViewer({ streamUrl, height = LIST_HEIGHT }: LogViewerProps) {
           />
           自动滚动
         </label>
-        <button className={styles.clearBtn ?? ""} onClick={clear}>
+        <button className={styles.clearBtn ?? ""} onClick={handleClear}>
           清空
         </button>
       </div>
@@ -148,7 +188,7 @@ export function LogViewer({ streamUrl, height = LIST_HEIGHT }: LogViewerProps) {
           <List
             listRef={listRef}
             rowCount={filtered.length}
-            rowHeight={ROW_HEIGHT}
+            rowHeight={expandedSet.size > 0 ? getRowHeight : ROW_HEIGHT}
             rowProps={rowProps}
             rowComponent={LogRow}
             overscanCount={8}
