@@ -27,8 +27,8 @@
 | 类别 | 当前值 |
 | --- | --- |
 | `OPENAI_API_BASE` | `https://openrouter.ai/api/v1` |
-| `OPENAI_MODEL` | `openai/gpt-5.4-nano` |
-| `OPENAI_FAST_MODEL` | `openai/gpt-5.4-nano` |
+| `OPENAI_MODEL` | `deepseek/deepseek-chat` |
+| `OPENAI_FAST_MODEL` | `deepseek/deepseek-chat` |
 | LLM profile 文件 | `wp11_llm_profiles.json` |
 | LLM route preset 文件 | `wp11_llm_route_presets.json` |
 | 默认 preset | `default` |
@@ -44,7 +44,7 @@
 
 - 当前 profile 文件里共有 4 个 profile：`101/102/201/301`。
 - 当前 profile 标签分层为 `cheap_fast`、`balanced`、`fallback`。
-- 由于你当前 `.env` 中 `OPENAI_MODEL` 和 `OPENAI_FAST_MODEL` 都是 `openai/gpt-5.4-nano`，所以这 4 个 profile 目前会解析到同一模型名；如果要让不同标签使用不同模型，需要改 `wp11_llm_profiles.json` 中的 `model` 或 `model_env`。
+- 由于你当前 `.env` 中 `OPENAI_MODEL` 和 `OPENAI_FAST_MODEL` 都是 `deepseek/deepseek-chat`，所以这 4 个 profile 目前会解析到同一模型名；如果要让不同标签使用不同模型，需要改 `wp11_llm_profiles.json` 中的 `model` 或 `model_env`。
 
 ## 4. `default_live()` 当前默认参数
 

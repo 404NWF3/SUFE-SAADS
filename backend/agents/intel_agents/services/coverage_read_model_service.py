@@ -260,7 +260,6 @@ def _vendor_from_name(name: str) -> str | None:
 
 def _model_family_from_name(name: str) -> str | None:
     for key, value in {
-        "gpt": "GPT",
         "claude": "Claude",
         "gemini": "Gemini",
         "llama": "Llama",

@@ -5,6 +5,7 @@ import { MetricsPanel } from "@/components/dashboard/MetricsPanel"
 import { AlertPanel } from "@/components/dashboard/AlertPanel"
 import { LogViewer } from "@/components/dashboard/LogViewer"
 import { DebugControlPanel } from "@/components/dashboard/DebugControlPanel"
+import { SentinelControlPanel } from "@/components/dashboard/SentinelControlPanel"
 import styles from "./page.module.css"
 
 interface Params {
@@ -56,6 +57,7 @@ export default async function WpDetailPage({
         <div className={styles.twoCol}>
           <AlertPanel wpId={wp.id} title="WP 告警" />
           {wp.id === "wp11" && <DebugControlPanel />}
+          {wp.id === "sentinel" && <SentinelControlPanel />}
         </div>
       </div>
     </div>

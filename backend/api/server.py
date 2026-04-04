@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from backend.agents.intel_agents.orchestrator.runtime import Phase1GraphRuntime
 from backend.api.run_store import RunStore
-from backend.api.routers import wp11
+from backend.api.routers import sentinel, wp11
 
 logger = logging.getLogger(__name__)
 _stats_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="stats")
@@ -54,6 +54,7 @@ app.add_middleware(
 )
 
 app.include_router(wp11.router)
+app.include_router(sentinel.router)
 
 
 @app.get("/health")

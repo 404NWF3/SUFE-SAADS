@@ -807,7 +807,7 @@ def test_phase4_llm_audit_dto_validation() -> None:
     assert validated.candidate_attack_code == "ATTACK-2"
     assert validated.strategy_requested == "llm_required"
     assert validated.strategy_executed == "llm_primary"
-    assert validated.llm_model == "gpt-5-mini"
+    assert validated.llm_model == "qwen-max"
     assert validated.prompt_version == "v1.0-test"
     assert validated.llm_verdict == "same_attack"
     assert validated.llm_recommended_action == "merge"
@@ -1108,7 +1108,7 @@ def test_phase4_semantic_dedup_node_emits_llm_judgments() -> None:
                         "existing_stable_id": "stable-node-1",
                         "strategy_requested": "llm_optional",
                         "strategy_executed": "llm_primary",
-                        "llm_model": "gpt-5-mini",
+                        "llm_model": "qwen-max",
                         "prompt_version": "v1.0-test",
                         "llm_confidence": 0.92,
                         "llm_verdict": "same_attack",

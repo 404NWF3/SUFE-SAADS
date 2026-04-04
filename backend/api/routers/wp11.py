@@ -417,7 +417,9 @@ async def _run_graph_in_background(
     record.status = "running"
 
     def _put(event: dict[str, Any] | None) -> None:
-        """线程安全地向 asyncio.Queue 推送事件。"""
+        """线程安全地向 asyncio.Queue 推送事件，同时写入 replay 历史。"""
+        if event is not None:
+            record.log_history.append(event)
         loop.call_soon_threadsafe(record.log_queue.put_nowait, event)
 
     async def _stream_events() -> None:
@@ -885,8 +887,11 @@ async def cancel_run(run_id: str, request: Request) -> None:
 
 
 @router.get("/logs/stream")
-async def stream_logs(request: Request) -> StreamingResponse:
-    """SSE 日志流。消费最新活跃 run 的 log_queue。"""
+async def stream_logs(
+    request: Request,
+    last_event_index: int = 0,
+) -> StreamingResponse:
+    """SSE 日志流。消费最新活跃 run 的 log_queue，支持断线重连回放。"""
     _, store = _get_deps(request)
 
     async def event_generator():
@@ -911,6 +916,25 @@ async def stream_logs(request: Request) -> StreamingResponse:
         }
         yield f"data: {json.dumps(init_event, ensure_ascii=False)}\n\n"
 
+        # ── 回放 log_history 中客户端尚未收到的事件 ──
+        event_index = 0
+        for hist_event in record.log_history:
+            event_index += 1
+            if event_index <= last_event_index:
+                continue
+            yield f"id: {event_index}\ndata: {json.dumps(hist_event, ensure_ascii=False)}\n\n"
+
+        # 若 run 已结束且无需实时消费，直接发 done
+        if record.status in ("succeeded", "failed", "partial_success"):
+            done_event = {
+                "type": "done",
+                "run_id": record.run_id,
+                "status": record.status,
+                "percent": record.percent,
+            }
+            yield f"data: {json.dumps(done_event, ensure_ascii=False)}\n\n"
+            return
+
         # 持续消费 log_queue 直到 None 哨兵
         while True:
             if await request.is_disconnected():
@@ -932,7 +956,8 @@ async def stream_logs(request: Request) -> StreamingResponse:
                 yield f"data: {json.dumps(done_event, ensure_ascii=False)}\n\n"
                 break
 
-            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            event_index += 1
+            yield f"id: {event_index}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_generator(),

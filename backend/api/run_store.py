@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -78,6 +79,10 @@ class RunRecord:
     task: asyncio.Task | None = field(default=None, repr=False)  # type: ignore[type-arg]
     log_queue: asyncio.Queue[dict[str, Any] | None] = field(
         default_factory=asyncio.Queue, repr=False
+    )
+    # Ring buffer: retains the last N events for replay on SSE reconnect.
+    log_history: collections.deque[dict[str, Any]] = field(
+        default_factory=lambda: collections.deque(maxlen=200), repr=False
     )
 
 

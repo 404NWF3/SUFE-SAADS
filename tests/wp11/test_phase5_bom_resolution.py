@@ -596,7 +596,7 @@ def test_phase5_llm_primary_audit_records_are_well_formed() -> None:
     agent = BomMapperAgent(strategy="rules_only")
     agent.strategy = "llm_required"
     agent._llm = mock_llm
-    agent.llm_model = "gpt-5-mini"
+    agent.llm_model = "qwen-max"
 
     items, audits = agent.resolve_batch([_item_with_bom("openai api", vendor="OpenAI")])
 
@@ -614,7 +614,7 @@ def test_phase5_llm_primary_audit_records_are_well_formed() -> None:
         "rules_only_degraded",
     }
     assert validated.strategy_executed == "llm_primary"
-    assert validated.llm_model == "gpt-5-mini"
+    assert validated.llm_model == "qwen-max"
     assert validated.prompt_version == "v1.0-test"
     assert validated.llm_confidence == 0.95
     assert validated.llm_decision == "accept"

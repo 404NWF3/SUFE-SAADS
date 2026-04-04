@@ -110,6 +110,24 @@ export const WP_REGISTRY: WpMeta[] = [
     order: 4,
     mockStatus: "pending",
   },
+  {
+    id: "sentinel",
+    label: "Sentinel 安全情报",
+    code: "WP1-5",
+    layer: "generic",
+    role: "LLM威胁观察者",
+    description:
+      "自动采集 NVD/GitHub/arXiv 的 LLM 安全威胁情报，按 OWASP LLM Top 10 分类覆盖。",
+    apiBase: "/api/sentinel",
+    metrics: [
+      { key: "intel_count",     label: "AI相关情报", unit: "条", format: "number"  },
+      { key: "owasp_coverage",  label: "OWASP 覆盖",  unit: "%",  format: "percent" },
+      { key: "high_risk_count", label: "高危漏洞",    unit: "个", format: "number"  },
+    ],
+    logStream: "/api/sentinel/logs/stream",
+    order: 5,
+    mockStatus: "pending",
+  },
 ]
 
 /** 按 order 排序后的注册表（使用时请用此导出） */

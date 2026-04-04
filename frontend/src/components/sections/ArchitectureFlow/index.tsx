@@ -121,6 +121,8 @@ function ConnectorArrow({ isBoundary = false }: { isBoundary?: boolean }) {
 
 /* ── ArchitectureFlow section ─────────────────────────────────────────────── */
 export function ArchitectureFlow() {
+  const homepageFlow = SORTED_WP_REGISTRY.filter((wp) => wp.id !== "sentinel")
+
   return (
     <section className="section" id="architecture">
       <div className="container">
@@ -144,7 +146,7 @@ export function ArchitectureFlow() {
 
         {/* Pipeline */}
         <div className={styles.pipeline}>
-          {SORTED_WP_REGISTRY.map((wp, i) => (
+          {homepageFlow.map((wp, i) => (
             <Fragment key={wp.id}>
               <ScrollReveal delay={i as 0 | 1 | 2 | 3}>
                 <WpCard wp={wp} />

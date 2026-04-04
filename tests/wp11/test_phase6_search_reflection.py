@@ -349,7 +349,7 @@ def test_phase6_audit_dto_validates() -> None:
             "reflection_round": 0,
             "strategy_requested": "llm_required",
             "strategy_executed": "llm_primary",
-            "llm_model": "gpt-5-mini",
+            "llm_model": "qwen-max",
             "prompt_version": "v1.0-test",
             "should_retry": True,
             "stop_reason": "rewrite_generated",

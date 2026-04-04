@@ -48,7 +48,7 @@ def test_non_dashscope_model_keeps_default_request_shape(monkeypatch) -> None:
     monkeypatch.setattr(langchain_openai, "ChatOpenAI", FakeChatOpenAI)
 
     llm_client_factory.build_structured_chat_openai(
-        model="gpt-5-mini",
+        model="qwen-max",
         temperature=0.0,
         base_url="https://api.openai.com/v1",
         api_key="test-key",

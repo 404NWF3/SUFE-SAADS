@@ -99,7 +99,7 @@
       "profile_id": "201",
       "profile": "balanced",
       "provider": "openai_compatible",
-      "model": "openai/gpt-5.4-mini",
+      "model": "deepseek/deepseek-chat",
       "base_url_env": "OPENAI_API_BASE",
       "api_key_env": "OPENAI_API_KEY",
       "enabled": true,

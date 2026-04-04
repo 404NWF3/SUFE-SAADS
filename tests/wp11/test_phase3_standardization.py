@@ -221,7 +221,7 @@ def _make_mock_llm_result() -> dict[str, Any]:
 def _make_mock_llm_standardizer(result: dict[str, Any] | None = None) -> MagicMock:
     """Create a mock LLM standardizer that returns a canned result."""
     mock = MagicMock()
-    mock.model = "gpt-5-mini"
+    mock.model = "qwen-max"
     mock.PROMPT_VERSION = "v2.0-llm-primary"
     mock.is_available.return_value = True
     mock.validate_connectivity.return_value = None
@@ -232,7 +232,7 @@ def _make_mock_llm_standardizer(result: dict[str, Any] | None = None) -> MagicMo
 def _make_failing_llm_standardizer() -> MagicMock:
     """Create a mock LLM standardizer that raises on extract."""
     mock = MagicMock()
-    mock.model = "gpt-5-mini"
+    mock.model = "qwen-max"
     mock.PROMPT_VERSION = "v2.0-llm-primary"
     mock.is_available.return_value = True
     mock.validate_connectivity.return_value = None
@@ -291,7 +291,7 @@ def test_llm_primary_produces_enriched_output(tmp_path: Path) -> None:
     assert item["attack_family"] == "prompt_injection"
     assert item["severity_level"] == "high"
     assert item["source_metadata"]["standardization_strategy"] == "llm_primary"
-    assert item["source_metadata"]["llm_model"] == "gpt-5-mini"
+    assert item["source_metadata"]["llm_model"] == "qwen-max"
     assert item["source_metadata"]["prompt_version"] == "v2.0-llm-primary"
     assert item["extraction_confidence"] == 0.91
 
@@ -613,7 +613,7 @@ def test_parse_and_standardize_node_returns_audits(tmp_path: Path) -> None:
         "run_status": "running",
         "runtime_context": {
             "standardization_strategy": "rules_only",
-            "llm_model": "gpt-5-mini",
+            "llm_model": "qwen-max",
             "llm_temperature": 0.0,
             "validate_llm_online": False,
         },
