@@ -1,138 +1,43 @@
-# 基于多智能体的 AI 系统态势感知与自动化防御系统
+# saads-wp12
 
-## 系统定位
+WP1-2 当前定位是“大模型安全测试方案生成”模块，不再承担 job 调度或自动轮询职责。
 
-通过构建一套**自我感知、学习、规划、执行**的智能体群，解决各类 AI 系统（包括大模型、小模型、AI OS、AI 应用等）所面临的各类安全挑战，涵盖**网络安全**与**功能安全**。
+当前稳定主线：
 
-**第一阶段**主攻大模型的安全问题（提示词注入、模型越狱等网络安全相关问题）；未来将逐步开发各类子系统与智能体，解决更广泛的安全问题。
+`ingest_intel -> normalize_intel -> understand_threat_subgraph -> generate_test_package_subgraph -> validate_test_package -> finalize_plan_result -> persist_plan_artifacts`
 
-四个智能体模块 (WP1-1 ~ WP1-4) 协同工作，形成完整的 **攻防一体化安全闭环** — 不仅自动发现和验证漏洞，还能自动生成防御能力（检测模型），持续进化。
+主线定义文件：
 
-## 核心架构
+- `saads_wp12/agent.py`
+- `saads_wp12/graphs/main_graph.py`
 
-| 智能体 | 编号 | 角色定位 | 所属层次 |
-|--------|------|----------|----------|
-| **情报采集智能体** | WP1-1 | 威胁发现者 | 通用层 |
-| **渗透测试智能体** | WP1-2 | 测试方案生成者 | 通用层 |
-| **沙盒模拟智能体** | WP1-3 | 测试执行与数据采集者 | 用户层 |
-| **异常检测智能体** | WP1-4 | 防御建设者 | 用户层 |
+## Current Runtime Entry
 
-### 通用层与用户层
+当前推荐运行入口是：
 
-系统明确划分为两个层次：
+`python -m saads_wp12.run_feed_once`
 
-**通用层（与用户应用无关，持续运行）**
+这个入口会：
 
-WP1-1 和 WP1-2 独立运行，不依赖任何用户的具体应用。它们持续积累威胁情报、测试方案和脚本，类似于"弹药工厂"。
+- 从当前 feed provider 拉取情报
+- 用 `artifacts/processed_attack_ids.json` 做本地去重
+- 只处理还没跑过的 `attack_id`
+- 直接把完整 feed 项送进主线
+- 在 `artifacts/<run_id>/` 下落三层产物
 
-**用户层（与用户应用绑定）**
+常用环境变量：
 
-WP1-3 和 WP1-4 在用户接入系统后才开始工作。WP1-3 接入用户应用、解析其 AI BOM、与通用层的情报库匹配后筛选出相关威胁，然后执行测试并采集数据；WP1-4 基于采集的数据为用户训练定制化检测模型。
+- `WP12_FEED_SOURCE`
+- `WP12_PROCESS_LIMIT`
+- `WP12_DEDUP_REGISTRY_PATH`
 
-![系统架构图](./assets/ai_security_testing.svg)
+产物目录：
 
-### 核心设计原则
+- `artifacts/<run_id>/*_state_raw.json`
+- `artifacts/<run_id>/*_state_presentation.json`
+- `artifacts/<run_id>/*_plan.md`
 
-1. **通用层与用户层分离** — WP1-1/WP1-2 持续积累通用安全知识，不依赖用户；WP1-3/WP1-4 在用户接入后匹配并执行
-2. **系统层用 Pipeline + Event-Driven, 子系统内部各自选择最合适的 Agent 架构**
-3. **智能体之间通过中央知识库解耦, 而非直接 Handoff** — 各子系统运行时间跨度差异巨大, 且需要独立运行/调试
-4. **渐进式复杂度** — 先用文件系统 + JSON 跑通, 再演进为数据库 + 向量存储
-5. **攻防一体闭环** — 蓝队防御结果反馈回红队, 驱动下一轮攻击进化
+建议优先阅读：
 
-
-## 技术架构分层
-
-| 层级 | 组成 |
-|------|------|
-| **应用层** | 四个智能体 (WP1-1 ~ WP1-4) + 安全运营智能助手 |
-| **模型层** | 大语言模型 (攻击生成/评估)、多模态模型、向量模型、搜索引擎 |
-| **数据层** | 数据采集、预处理、向量化、知识库 (知识问答、报警根因分析) |
-| **中间层** | 资源管理 (Docker 容器/虚拟化)、AI 工具 (Dify)、安全模块 |
-| **基础设施** | 计算 (CPU/GPU)、存储 (HBM/NVMe)、网络 (IB/RoCE) |
-
-
-## 4 个子系统的详细设计
-
-### 子系统 1: 情报采集智能体 (WP1-1)
-
-**所属层次**: 通用层
-
-**核心任务**: 监控各类主流 AI 系统，自动化采集、分析各类安全威胁情报，标注受影响的 AI BOM 组件
-
-**内部架构**: Supervisor
-
-选择 Supervisor 是因为爬取目标是动态的, 需要 Supervisor 根据当前攻击池的覆盖情况决定"接下来去哪里找什么类型的攻击"。
-
-![情报采集智能体架构图](./assets/02_Intelligence-Collection-Module.svg)
-
-**数据来源**:
-
-| 来源 | 采集内容 |
-|------|---------|
-| **公开漏洞库** (CVE、NVD、MITRE ATT&CK) | 已知 AI 系统相关 CVE、ATT&CK 战术映射 |
-| **技术社区** (GitHub Security、HuggingFace、arXiv) | PoC 代码、安全论文、模型卡中的安全声明 |
-| **暗网数据** (论坛、Telegram 群组) | 地下攻击工具、泄露的攻击手法 |
-| **第三方情报 API** (VirusTotal、AlienVault 等) | 结构化威胁指标 (IoC)、关联分析 |
-
-**内部 Agent 说明**:
-
-| Agent | 职责 | 工具 |
-|-------|------|------|
-| **Intel Supervisor** | 分析攻击池覆盖率 (按 OWASP LLM Top 10 分类), 决定优先采集方向 | 知识库查询, 覆盖率统计 |
-| **Web Crawler Agent** | 爬取公开漏洞库、技术社区、安全博客 | httpx, BeautifulSoup, GitHub API, HuggingFace API |
-| **Paper Analyzer Agent** | 解析学术论文和安全报告, 提取攻击方法与 PoC | PDF 解析, LLM 摘要提取 |
-| **Dark Web Agent** | 采集暗网论坛和 Telegram 群组中的攻击情报 | Tor 代理, Telegram Bot API |
-| **Standardizer Agent** | 将原始情报标准化为 **STIX 2.1 兼容** 的 attack_pool schema, 去重, 标注受影响的 AI BOM 组件 | JSON Schema 验证, 相似度检测, STIX 序列化 |
-
-**产出**:
-- **安全威胁情报库**：`attack_pool/` 目录下的标准化攻击条目 (STIX 2.1 兼容 JSON)，每条标注受影响的 AI BOM 组件类型与版本
-- **AI BOM 通用组件知识库**：主流 AI 模型、框架、工具的组件信息与已知风险（类似 SBOM，用于后续与用户系统匹配）
-- **推荐处置方案**：基于公开安全建议和最佳实践的防御性建议（告诉你怎么修）
-- 实时告警 (高危新攻击技术发现时)
-- 可操作的测试用例 (直接可被 WP1-2 消费)
-
----
-
-### 子系统 2: 渗透测试智能体 (WP1-2)
-
-**所属层次**: 通用层
-
-**核心任务**: 针对 WP1-1 输出的安全威胁情报，借助大模型及"本体+知识图谱"技术，自动生成通用测试方案和测试脚本（代码、语料库等）
-
-**注意**: WP1-2 **仅负责生成**测试方案与脚本，不负责执行测试。实际测试执行在 WP1-3 沙盒中进行。
-
-**内部架构**: Supervisor
-
-- Orchestrator 需要从 attack_pool **按策略选择** 攻击任务, 而非让 Agent 自行决定
-- 攻击覆盖率 (OWASP LLM Top 10) 需要 Orchestrator 统一追踪
-
-<!-- ![渗透测试智能体架构图](./assets/03_Red-team-Orchestrator.svg) -->
-
-**关键能力**:
-
-| 能力 | 说明 |
-|------|------|
-| **基于本体+知识图谱生成测试方案** | 利用 AI 安全知识图谱理解攻击模式间的关联，生成系统化的测试方案 |
-| **基于模板生成测试脚本** | 参照 OWASP LLM Top 10 分类, 从 attack_pool 读取模板并实例化为可执行脚本 |
-| **攻击向量库管理** | 提示注入、数据泄露、拒绝服务、越狱、Agent 劫持等 |
-| **多模态测试支持** | 文本、图像、音频三种模态的攻击脚本生成 |
-| **预估 CVSS 评分** | 基于情报信息对威胁进行理论评分（最终验证在 WP1-3 执行后确定） |
-
-**内部 Agent 说明**:
-
-| Agent | 职责 | 工具 |
-|-------|------|------|
-| **Red Team Orchestrator** | 从 attack_pool 选择攻击、分派生成任务、追踪 OWASP Top 10 覆盖率 | 知识库读取, 知识图谱查询, 任务调度 |
-| **Prompt Injection Agent** | 生成直接/间接提示词注入攻击脚本 | Payload 模板库, 变异引擎 |
-| **Jailbreak Agent** | 生成越狱攻击脚本 (DAN、角色扮演、编码绕过、token 走私) | 越狱模板库, 变异引擎 |
-| **Info Leakage Agent** | 生成系统提示词泄露、训练数据泄露、RAG 数据源泄露的探测脚本 | 探测 Prompt 库 |
-| **Multimodal Attack Agent** | 生成图像对抗样本、音频攻击、跨模态注入脚本 | 图像处理库, 音频处理库 |
-
-**产出**:
-- **测试方案库**：针对各类威胁的系统化测试方案
-- **测试脚本库**：可执行的攻击脚本包（代码、语料库等），存入 `test_scripts/` 目录
-- 预估 CVSS 评分（理论评分，供 WP1-3 参考）
-
----
-
-- 
+- [docs/wp12_operations_guide_zh.md](docs/wp12_operations_guide_zh.md)
+- [docs/wp12_handover_guide_zh.md](docs/wp12_handover_guide_zh.md)
