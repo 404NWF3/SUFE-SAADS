@@ -9,6 +9,7 @@ interface AgentNodeCardProps {
 }
 
 const STATUS_DOT_CLASS: Record<WpNodeLastStatus, string> = {
+  running: styles.dotRunning ?? "",
   succeeded: styles.dotSucceeded ?? "",
   failed: styles.dotFailed ?? "",
   skipped: styles.dotSkipped ?? "",
@@ -16,6 +17,7 @@ const STATUS_DOT_CLASS: Record<WpNodeLastStatus, string> = {
 }
 
 const STATUS_CARD_CLASS: Record<WpNodeLastStatus, string> = {
+  running: styles.nodeCardRunning ?? "",
   succeeded: styles.nodeCardSucceeded ?? "",
   failed: styles.nodeCardFailed ?? "",
   skipped: styles.nodeCardSkipped ?? "",
@@ -23,6 +25,7 @@ const STATUS_CARD_CLASS: Record<WpNodeLastStatus, string> = {
 }
 
 const STATUS_LABELS_ZH: Record<WpNodeLastStatus, string> = {
+  running: "运行中",
   succeeded: "成功",
   failed: "失败",
   skipped: "已跳过",
@@ -31,12 +34,12 @@ const STATUS_LABELS_ZH: Record<WpNodeLastStatus, string> = {
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
-  const m = Math.floor(diff / 60000)
-  if (m < 1) return "刚刚"
-  if (m < 60) return `${m}m 前`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h 前`
-  return `${Math.floor(h / 24)}d 前`
+  const minutes = Math.floor(diff / 60000)
+  if (minutes < 1) return "刚刚"
+  if (minutes < 60) return `${minutes}m 前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h 前`
+  return `${Math.floor(hours / 24)}d 前`
 }
 
 export function AgentNodeCard({
@@ -56,9 +59,7 @@ export function AgentNodeCard({
       />
       <div className={styles.nodeInfo}>
         <p className={styles.nodeName}>{node.display_name}</p>
-        {node.description && (
-          <p className={styles.nodeDesc}>{node.description}</p>
-        )}
+        {node.description && <p className={styles.nodeDesc}>{node.description}</p>}
         <p className={styles.nodeLastRun}>
           {node.last_run_at
             ? `上次运行：${timeAgo(node.last_run_at)} · ${STATUS_LABELS_ZH[node.last_status]}`
@@ -75,7 +76,7 @@ export function AgentNodeCard({
             : `单独运行 ${node.node_name}`
         }
       >
-        {isTriggering ? "运行中…" : "单独运行"}
+        {isTriggering ? "运行中..." : "单独运行"}
       </button>
     </div>
   )

@@ -188,6 +188,7 @@
 .nodeCard:hover { background: rgba(23,21,18,0.025); }
 
 .nodeCardFailed { border-left-color: var(--status-error, #b91c1c); }
+.nodeCardRunning { border-left-color: var(--status-running); }
 .nodeCardSucceeded { border-left-color: var(--status-running); }
 .nodeCardSkipped { border-left-color: rgba(23,21,18,0.15); }
 
@@ -256,6 +257,7 @@
   margin-top: 0.35rem;
 }
 
+.dotRunning { background: var(--status-running); }
 .dotSucceeded { background: var(--status-running); }
 .dotFailed { background: var(--status-error, #b91c1c); }
 .dotSkipped { background: rgba(23,21,18,0.25); }

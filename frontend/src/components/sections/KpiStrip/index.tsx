@@ -1,15 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import { ScrollReveal } from "@/components/ui/ScrollReveal"
 import { CountUp } from "@/components/ui/CountUp"
+import { useStats } from "@/lib/hooks/useStats"
+import type { StatsResponse } from "@/lib/types/stats"
 import styles from "./KpiStrip.module.css"
-
-interface StatsData {
-  attack_entry_count: number
-  eval_job_count: number
-  owasp_coverage_pct: number
-}
 
 interface KpiItem {
   value: number
@@ -19,7 +14,7 @@ interface KpiItem {
   formatter: (n: number) => string
 }
 
-function buildKpis(stats: StatsData | null): KpiItem[] {
+function buildKpis(stats: StatsResponse | null): KpiItem[] {
   return [
     {
       value: stats?.attack_entry_count ?? 0,
@@ -46,19 +41,8 @@ function buildKpis(stats: StatsData | null): KpiItem[] {
 }
 
 export function KpiStrip() {
-  const [stats, setStats] = useState<StatsData | null>(null)
-
-  useEffect(() => {
-    fetch("/api/stats")
-      .then((r) => {
-        if (!r.ok) throw new Error(`stats ${r.status}`)
-        return r.json() as Promise<StatsData>
-      })
-      .then(setStats)
-      .catch((err) => console.warn("[KpiStrip] stats fetch failed:", err))
-  }, [])
-
-  const kpis = buildKpis(stats)
+  const { stats } = useStats()
+  const kpis = buildKpis(stats ?? null)
 
   return (
     <section className={styles.section} id="kpi-strip" aria-label="关键指标">

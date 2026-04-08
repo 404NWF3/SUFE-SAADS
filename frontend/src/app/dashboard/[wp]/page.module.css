@@ -16,6 +16,18 @@
   gap: 1.25rem;
 }
 
+.wp11Layout {
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) minmax(420px, 1.2fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.wp11Log,
+.wp11Side {
+  min-width: 0;
+}
+
 .notFound {
   display: flex;
   flex-direction: column;
@@ -33,6 +45,7 @@
 }
 
 @media (max-width: 900px) {
+  .wp11Layout,
   .twoCol {
     grid-template-columns: 1fr;
   }
