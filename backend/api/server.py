@@ -15,7 +15,8 @@ from pydantic import BaseModel
 
 from backend.agents.intel_agents.orchestrator.runtime import Phase1GraphRuntime
 from backend.api.run_store import RunStore
-from backend.api.routers import sentinel, wp11
+from backend.api.routers import sentinel, wp11, wp12
+from backend.api.wp12_run_store import Wp12RunStore
 
 logger = logging.getLogger(__name__)
 _stats_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="stats")
@@ -26,10 +27,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """启动时初始化共享资源；关闭时清理。"""
     app.state.wp11_runtime = Phase1GraphRuntime()
     app.state.run_store = RunStore()
+    app.state.wp12_run_store = Wp12RunStore()
     yield
     # 取消所有未完成的运行任务
     store: RunStore = app.state.run_store
     for record in store._runs.values():
+        if record.task and not record.task.done():
+            record.task.cancel()
+    wp12_store: Wp12RunStore = app.state.wp12_run_store
+    for record in wp12_store._runs.values():
         if record.task and not record.task.done():
             record.task.cancel()
 
@@ -54,6 +60,7 @@ app.add_middleware(
 )
 
 app.include_router(wp11.router)
+app.include_router(wp12.router)
 app.include_router(sentinel.router)
 
 

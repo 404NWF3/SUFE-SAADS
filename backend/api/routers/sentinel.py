@@ -1,4 +1,4 @@
-"""Sentinel workspace bridge router for the dashboard."""
+﻿"""Sentinel workspace bridge router for the dashboard."""
 from __future__ import annotations
 
 
@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
-import websockets
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
+import httpx
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/sentinel", tags=["sentinel"])
@@ -24,7 +24,6 @@ router = APIRouter(prefix="/api/sentinel", tags=["sentinel"])
 _DEFAULT_AGENT_ID = "llm-security-intel"
 _DEFAULT_WORKSPACE = Path.home() / ".openclaw" / "workspace-llm-security-intel"
 _DEFAULT_CONFIG = Path.home() / ".openclaw" / "openclaw.json"
-_GATEWAY_PROTOCOL = 3
 _MAX_HISTORY = 1200
 _MAX_RUNS = 20
 _TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
@@ -59,12 +58,13 @@ _COLLECTOR_NODE_NAMES: dict[str, str] = {
 }
 
 _COLLECT_MODE_DESCRIPTIONS: dict[str, str] = {
-    "full": "全量采集 NVD、GitHub Advisory、arXiv 与社区情报",
-    "nvd": "采集 NVD / CVE 最新安全数据",
-    "github": "采集 GitHub Security Advisory 与相关情报",
-    "arxiv": "采集 AI 安全相关 arXiv 论文与研究动态",
-    "community": "采集 Hacker News / Reddit 等社区安全信号",
+    "full": "Collect NVD, GitHub Advisory, arXiv, and community intelligence.",
+    "nvd": "Collect the latest NVD / CVE intelligence.",
+    "github": "Collect GitHub Security Advisory intelligence.",
+    "arxiv": "Collect AI security related arXiv papers and research updates.",
+    "community": "Collect community security signals from sources like Hacker News and Reddit.",
 }
+
 
 
 def _now() -> datetime:
@@ -168,11 +168,36 @@ def _http_to_ws(url: str) -> str:
     return urlunparse(parsed._replace(scheme=scheme))
 
 
+def _responses_url(http_url: str) -> str:
+    return http_url.rstrip("/") + "/v1/responses"
+
+
+def _models_url(http_url: str) -> str:
+    return http_url.rstrip("/") + "/v1/models"
+
+
 def _extract_gateway_token(config: dict[str, Any]) -> str | None:
     gateway = config.get("gateway") or {}
     auth = gateway.get("auth") or {}
     token = auth.get("token")
     return str(token) if token else None
+
+
+def _format_gateway_scope_error(detail: Any) -> str:
+    text = str(detail or "rpc failed")
+    match = re.search(r"missing scope:\s*([A-Za-z0-9_.*:-]+)", text, re.IGNORECASE)
+    if not match:
+        return text
+
+    missing_scope = match.group(1)
+    guidance = (
+        f"gateway token is missing {missing_scope}; configure OPENCLAW_GATEWAY_TOKEN "
+        "with operator.read/operator.write and avoid reusing OPENCLAW_HOOKS_TOKEN "
+        "for Gateway operator RPC"
+    )
+    if guidance.lower() in text.lower():
+        return text
+    return f"{text}; {guidance}"
 
 
 @dataclass(slots=True)
@@ -188,8 +213,10 @@ class OpenClawSettings:
     agent_workspace: Path | None
     agent_workspace_matches: bool
     gateway_http_url: str
+    gateway_responses_url: str
     gateway_ws_url: str
     gateway_token: str | None
+    gateway_token_source: str | None
     hooks_enabled: bool
     hook_mapping_present: bool
 
@@ -234,7 +261,11 @@ def _load_openclaw_settings() -> OpenClawSettings:
     )
 
     gateway_http_url = os.getenv("OPENCLAW_GATEWAY_URL") or _derive_gateway_http_url(config)
-
+    gateway_token = os.getenv("OPENCLAW_GATEWAY_TOKEN")
+    gateway_token_source = "env:OPENCLAW_GATEWAY_TOKEN" if gateway_token else None
+    if not gateway_token:
+        gateway_token = _extract_gateway_token(config)
+        gateway_token_source = "config:gateway.auth.token" if gateway_token else None
     return OpenClawSettings(
         config_path=config_path,
         config_exists=config_exists,
@@ -247,179 +278,152 @@ def _load_openclaw_settings() -> OpenClawSettings:
         agent_workspace=agent_workspace,
         agent_workspace_matches=_same_path(workspace_root, agent_workspace),
         gateway_http_url=gateway_http_url,
+        gateway_responses_url=_responses_url(gateway_http_url),
         gateway_ws_url=_http_to_ws(gateway_http_url),
-        gateway_token=(
-            os.getenv("OPENCLAW_GATEWAY_TOKEN")
-            or os.getenv("OPENCLAW_HOOKS_TOKEN")
-            or _extract_gateway_token(config)
-        ),
+        gateway_token=gateway_token,
+        gateway_token_source=gateway_token_source,
         hooks_enabled=bool(hooks.get("enabled")),
         hook_mapping_present=hook_mapping_present,
     )
 
 
-class OpenClawGatewayError(RuntimeError):
-    """Raised when the OpenClaw Gateway RPC layer is unavailable."""
+class OpenClawResponsesError(RuntimeError):
+    """Raised when the OpenClaw HTTP Responses surface is unavailable."""
 
 
-class OpenClawGatewaySession:
-    """Thin RPC client for the OpenClaw Gateway WebSocket protocol."""
+class OpenClawResponsesClient:
+    """HTTP client for the OpenClaw `/v1/responses` and `/v1/models` endpoints."""
 
     def __init__(self, settings: OpenClawSettings):
         self.settings = settings
-        self.websocket: Any = None
-        self.protocol: int | None = None
-        self.server_info: dict[str, Any] = {}
-        self._request_index = 1
-        self._pending: dict[str, asyncio.Future[dict[str, Any]]] = {}
-        self._events: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-        self._reader_task: asyncio.Task[None] | None = None
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=10.0, read=None, write=30.0, pool=10.0),
+            follow_redirects=False,
+        )
 
-    async def __aenter__(self) -> OpenClawGatewaySession:
-        await self.connect()
+    async def __aenter__(self) -> OpenClawResponsesClient:
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         await self.close()
 
-    async def connect(self) -> None:
-        if not self.settings.gateway_token:
-            raise OpenClawGatewayError("gateway token is missing")
+    async def close(self) -> None:
+        await self.client.aclose()
 
+    def _auth_headers(self) -> dict[str, str]:
+        if not self.settings.gateway_token:
+            raise OpenClawResponsesError("gateway token is missing")
+        return {"Authorization": f"Bearer {self.settings.gateway_token}"}
+
+    async def probe_models(self) -> dict[str, Any]:
+        response: httpx.Response | None = None
         try:
-            self.websocket = await websockets.connect(
-                self.settings.gateway_ws_url,
-                open_timeout=10,
-                close_timeout=5,
-                ping_interval=20,
-                ping_timeout=20,
-                max_size=20_000_000,
+            response = await self.client.get(
+                _models_url(self.settings.gateway_http_url),
+                headers=self._auth_headers(),
+                timeout=httpx.Timeout(connect=10.0, read=10.0, write=10.0, pool=10.0),
             )
-        except Exception as exc:
-            raise OpenClawGatewayError(
-                f"failed to connect to {self.settings.gateway_ws_url}: {exc}"
+        except httpx.HTTPError as exc:
+            raise OpenClawResponsesError(
+                f"failed to connect to {self.settings.gateway_responses_url}: {exc}"
             ) from exc
 
-        challenge = json.loads(await asyncio.wait_for(self.websocket.recv(), timeout=10))
-        if challenge.get("type") != "event" or challenge.get("event") != "connect.challenge":
-            raise OpenClawGatewayError("gateway did not send connect.challenge")
+        content_type = (response.headers.get("content-type") or "").lower()
+        probe: dict[str, Any] = {
+            "reachable": True,
+            "status_code": response.status_code,
+            "content_type": content_type,
+            "models_ready": False,
+            "model_ids": [],
+            "server_version": response.headers.get("x-openclaw-version"),
+        }
 
-        await self.websocket.send(
-            json.dumps(
-                {
-                    "type": "req",
-                    "id": "connect",
-                    "method": "connect",
-                    "params": {
-                        "minProtocol": _GATEWAY_PROTOCOL,
-                        "maxProtocol": _GATEWAY_PROTOCOL,
-                        "client": {
-                            "id": "gateway-client",
-                            "version": "saads-backend",
-                            "platform": "python",
-                            "mode": "backend",
-                        },
-                        "auth": {"token": self.settings.gateway_token},
-                        "role": "operator",
-                        "scopes": ["operator.admin"],
-                    },
-                }
-            )
-        )
-        hello = json.loads(await asyncio.wait_for(self.websocket.recv(), timeout=10))
-        if not hello.get("ok"):
-            detail = (hello.get("error") or {}).get("message") or hello.get("payload") or "connect rejected"
-            raise OpenClawGatewayError(f"gateway connect failed: {detail}")
+        if "application/json" not in content_type:
+            return probe
 
-        payload = hello.get("payload") or {}
-        self.protocol = payload.get("protocol")
-        self.server_info = payload.get("server") or {}
-        self._reader_task = asyncio.create_task(self._reader_loop())
-
-    async def close(self) -> None:
-        if self._reader_task is not None:
-            self._reader_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._reader_task
-            self._reader_task = None
-
-        if self.websocket is not None:
-            with contextlib.suppress(Exception):
-                await self.websocket.close()
-            self.websocket = None
-
-        for future in self._pending.values():
-            if not future.done():
-                future.cancel()
-        self._pending.clear()
-
-    async def _reader_loop(self) -> None:
         try:
-            async for raw in self.websocket:
-                message = json.loads(raw)
-                if message.get("type") == "res":
-                    request_id = str(message.get("id"))
-                    future = self._pending.pop(request_id, None)
-                    if future is not None and not future.done():
-                        future.set_result(message)
-                else:
-                    await self._events.put(message)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            for future in self._pending.values():
-                if not future.done():
-                    future.set_exception(
-                        OpenClawGatewayError(f"gateway connection dropped: {exc}")
-                    )
-            self._pending.clear()
-        finally:
-            await self._events.put({"type": "event", "event": "_connection_closed"})
+            payload = response.json()
+        except json.JSONDecodeError as exc:
+            raise OpenClawResponsesError(f"/v1/models returned invalid JSON: {exc}") from exc
 
-    async def call(
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if isinstance(data, list):
+            probe["model_ids"] = [
+                str(item.get("id"))
+                for item in data
+                if isinstance(item, dict) and item.get("id")
+            ]
+            probe["models_ready"] = response.status_code == 200
+        return probe
+
+    async def complete_response(
         self,
-        method: str,
-        params: dict[str, Any],
         *,
-        timeout: float | None = 15.0,
+        agent_id: str,
+        message: str,
     ) -> dict[str, Any]:
-        if self.websocket is None:
-            raise OpenClawGatewayError("gateway session is not connected")
-
-        request_id = str(self._request_index)
-        self._request_index += 1
-        future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
-        self._pending[request_id] = future
-
-        await self.websocket.send(
-            json.dumps(
-                {
-                    "type": "req",
-                    "id": request_id,
-                    "method": method,
-                    "params": params,
-                }
-            )
-        )
-
+        headers = {
+            **self._auth_headers(),
+            "Content-Type": "application/json",
+            "x-openclaw-agent-id": agent_id,
+        }
+        payload = {
+            "model": "openclaw",
+            "input": message,
+        }
         try:
-            if timeout is None:
-                response = await future
-            else:
-                response = await asyncio.wait_for(future, timeout=timeout)
-        except asyncio.TimeoutError as exc:
-            self._pending.pop(request_id, None)
-            raise OpenClawGatewayError(f"{method} timed out after {timeout:.0f}s") from exc
+            response = await self.client.post(
+                self.settings.gateway_responses_url,
+                headers=headers,
+                json=payload,
+            )
+            if response.status_code >= 400:
+                raise OpenClawResponsesError(
+                    f"/v1/responses failed: {await _read_openclaw_http_error(response)}"
+                )
+            try:
+                payload = response.json()
+            except json.JSONDecodeError as exc:
+                raise OpenClawResponsesError(f"/v1/responses returned invalid JSON: {exc}") from exc
+            if not isinstance(payload, dict):
+                raise OpenClawResponsesError("/v1/responses returned a non-object payload")
+            return payload
+        except httpx.HTTPError as exc:
+            raise OpenClawResponsesError(
+                f"failed to call {self.settings.gateway_responses_url}: {exc}"
+            ) from exc
 
-        if not response.get("ok"):
-            detail = (response.get("error") or {}).get("message") or response.get("payload") or "rpc failed"
-            raise OpenClawGatewayError(f"{method} failed: {detail}")
-        return response.get("payload") or {}
 
-    async def next_event(self, timeout: float | None = None) -> dict[str, Any]:
-        if timeout is None:
-            return await self._events.get()
-        return await asyncio.wait_for(self._events.get(), timeout=timeout)
+async def _read_openclaw_http_error(response: httpx.Response) -> str:
+    body = (await response.aread()).decode("utf-8", errors="replace").strip()
+    content_type = (response.headers.get("content-type") or "").lower()
+    if "application/json" in content_type and body:
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, dict):
+            error = payload.get("error")
+            if isinstance(error, dict) and error.get("message"):
+                return f"HTTP {response.status_code}: {error['message']}"
+    if body:
+        snippet = body[:240].replace("\r", " ").replace("\n", " ")
+        return f"HTTP {response.status_code}: {snippet}"
+    return f"HTTP {response.status_code}"
+
+
+def _flush_sse_data_lines(data_lines: list[str]) -> dict[str, Any] | str | None:
+    if not data_lines:
+        return None
+    raw = "\n".join(data_lines)
+    data_lines.clear()
+    if raw == "[DONE]":
+        return raw
+    return json.loads(raw)
+
+
+def _expected_openclaw_model_ids(agent_id: str) -> set[str]:
+    return {"openclaw", "openclaw/default", f"openclaw/{agent_id}"}
 
 
 @dataclass(slots=True)
@@ -548,7 +552,7 @@ async def _register_run(mode: str, transport: str) -> SentinelRun:
         global _active_run_id
         active = _get_active_run()
         if active and active.status not in _TERMINAL_STATUSES:
-            raise HTTPException(status_code=409, detail="已有 Sentinel 采集任务正在运行")
+            raise HTTPException(status_code=409, detail="宸叉湁 Sentinel 閲囬泦浠诲姟姝ｅ湪杩愯")
 
         run = SentinelRun(
             run_id=uuid.uuid4().hex[:8],
@@ -565,15 +569,37 @@ async def _register_run(mode: str, transport: str) -> SentinelRun:
         return run
 
 
-def _build_openclaw_message(mode: str) -> str:
-    desc = _COLLECT_MODE_DESCRIPTIONS.get(mode, mode)
+def _build_openclaw_command(mode: str, workspace_root: Path) -> str:
+    python_bin = _build_subprocess_python(workspace_root)
+    args = _COLLECTOR_COMMANDS.get(mode)
+    if not args:
+        raise ValueError(f"unsupported Sentinel mode: {mode}")
+    return " ".join([str(python_bin), *(str(part) for part in args)])
+
+
+def _build_openclaw_message(mode: str, workspace_root: Path) -> str:
+    task = {
+        "full": "sentinel，为我收集最近7天与大模型攻击相关的情报，重点覆盖 NVD、GitHub Advisory、arXiv 和社区讨论。",
+        "nvd": "sentinel，为我收集最近7天与大模型攻击相关、且可从 NVD / CVE 侧验证的情报。",
+        "github": "sentinel，为我收集最近7天与大模型攻击相关、侧重 GitHub Security Advisory 与 PoC 的情报。",
+        "arxiv": "sentinel，为我收集最近7天与大模型攻击相关、侧重 arXiv 论文与研究进展的情报。",
+        "community": "sentinel，为我收集最近7天与大模型攻击相关、侧重社区讨论与实战案例的情报。",
+    }.get(mode, f"sentinel，为我收集最近7天与 {mode} 相关的安全情报。")
+    stage = {
+        "full": "正在收集最近7天与大模型攻击相关的情报",
+        "nvd": "正在收集最近7天与大模型攻击相关的 NVD / CVE 情报",
+        "github": "正在收集最近7天与大模型攻击相关的 GitHub Advisory 情报",
+        "arxiv": "正在收集最近7天与大模型攻击相关的 arXiv 研究情报",
+        "community": "正在收集最近7天与大模型攻击相关的社区情报",
+    }.get(mode, f"正在收集最近7天与 {mode} 相关的安全情报")
     return (
-        "请在当前 workspace 中执行 Sentinel 安全情报任务。"
-        f"采集模式：{mode}，目标：{desc}。"
-        "优先使用现有脚本、技能与知识库目录完成采集、标准化、去重、按 OWASP LLM Top 10 分类，并在需要时更新日报或报告。"
-        "在每个主要阶段开始时，请单独输出一行简短中文进度，格式必须是 [STATUS] <当前阶段>。"
-        "例如：[STATUS] 正在采集 NVD、[STATUS] 正在整理 GitHub Advisory、[STATUS] 正在生成日报。"
-        "如果缺少依赖、权限或配置，请直接明确报错原因。"
+        f"{task}\n"
+        f"当前 workspace: {workspace_root}\n"
+        "你可以自由使用当前环境中可用的 skills、原生搜索工具、workspace 内已有脚本，以及其他必要工具。"
+        "不要求先读取 skill 文件，也不要求固定执行某一条命令；请根据实际情况自行决定研究路径。\n"
+        "如果你判断直接运行 workspace 中的采集脚本更合适，可以自行执行，但这不是硬性要求。\n"
+        f"最终请使用中文回复。第一行必须严格输出：[STATUS] {stage}\n"
+        "随后给出简洁总结，说明你使用了哪些来源或工具、有哪些关键发现，以及失败时的具体错误。"
     )
 
 
@@ -621,16 +647,9 @@ def _format_duration(seconds: float) -> str:
     return f"{secs}s"
 
 
-async def _probe_gateway(settings: OpenClawSettings) -> dict[str, Any]:
-    async with OpenClawGatewaySession(settings) as session:
-        health = await session.call("health", {}, timeout=10.0)
-        return {
-            "reachable": True,
-            "protocol": session.protocol,
-            "server_version": session.server_info.get("version"),
-            "conn_id": session.server_info.get("connId"),
-            "default_agent_id": health.get("defaultAgentId"),
-        }
+async def _probe_responses_api(settings: OpenClawSettings) -> dict[str, Any]:
+    async with OpenClawResponsesClient(settings) as client:
+        return await client.probe_models()
 
 
 async def _build_connection_snapshot() -> dict[str, Any]:
@@ -638,25 +657,30 @@ async def _build_connection_snapshot() -> dict[str, Any]:
     issues: list[str] = []
 
     if not settings.config_exists:
-        issues.append(f"未找到 OpenClaw 配置文件：{settings.config_path}")
+        issues.append(f"OpenClaw config file not found: {settings.config_path}")
     if settings.config_error:
         issues.append(settings.config_error)
     if not settings.workspace_exists:
-        issues.append(f"Workspace 不存在：{settings.workspace_root}")
+        issues.append(f"Workspace not found: {settings.workspace_root}")
     if not settings.agent_configured:
-        issues.append(f"OpenClaw agent 未配置：{settings.agent_id}")
+        issues.append(f"OpenClaw agent not configured: {settings.agent_id}")
     if settings.agent_workspace and not settings.agent_workspace_matches:
         issues.append(
-            f"前端使用的 Workspace 与 agent 配置不一致：{settings.workspace_root} != {settings.agent_workspace}"
+            f"Workspace mismatch between frontend target and agent config: {settings.workspace_root} != {settings.agent_workspace}"
         )
     if not settings.gateway_token:
-        issues.append("缺少 Gateway token，请配置 OPENCLAW_GATEWAY_TOKEN 或 OPENCLAW_HOOKS_TOKEN")
+        issues.append(
+            "Missing Gateway token. Set OPENCLAW_GATEWAY_TOKEN or configure gateway.auth.token in ~/.openclaw/openclaw.json."
+        )
 
     gateway_info = {
         "http_url": settings.gateway_http_url,
+        "responses_url": settings.gateway_responses_url,
         "ws_url": settings.gateway_ws_url,
         "auth_configured": bool(settings.gateway_token),
         "reachable": False,
+        "surface": "subprocess-fallback",
+        "models_ready": False,
         "protocol": None,
         "server_version": None,
         "default_agent_id": None,
@@ -664,16 +688,38 @@ async def _build_connection_snapshot() -> dict[str, Any]:
 
     if not issues:
         try:
-            gateway_info.update(await _probe_gateway(settings))
+            gateway_probe = await _probe_responses_api(settings)
+            gateway_info.update(
+                {
+                    "reachable": gateway_probe.get("reachable", False),
+                    "models_ready": gateway_probe.get("models_ready", False),
+                    "server_version": gateway_probe.get("server_version"),
+                }
+            )
+            model_ids = set(gateway_probe.get("model_ids") or [])
+            expected_ids = _expected_openclaw_model_ids(settings.agent_id)
+            if not gateway_probe.get("models_ready"):
+                status_code = gateway_probe.get("status_code")
+                content_type = gateway_probe.get("content_type") or "unknown"
+                issues.append(
+                    "OpenClaw HTTP Responses API is not ready: /v1/models did not return a JSON model list. "
+                    "Enable gateway.http.endpoints.responses.enabled=true and restart Gateway "
+                    f"(HTTP={status_code}, Content-Type={content_type})."
+                )
+            elif not expected_ids.issubset(model_ids):
+                missing_ids = ", ".join(sorted(expected_ids - model_ids))
+                issues.append(f"OpenClaw /v1/models is missing required agent model ids: {missing_ids}")
         except Exception as exc:
             issues.append(str(exc))
 
-    if gateway_info["reachable"] and not issues:
+
+    if gateway_info["models_ready"] and not issues:
         status = "ready"
     elif settings.workspace_exists or settings.agent_configured:
         status = "degraded"
     else:
         status = "error"
+    gateway_info["surface"] = "responses" if status == "ready" else "subprocess-fallback"
 
     return {
         "status": status,
@@ -729,7 +775,7 @@ async def _run_subprocess_collector(run: SentinelRun) -> None:
             "type": "node_detail",
             "node": node_name,
             "display_name": node_name,
-            "message": f"启动本地采集脚本：{' '.join(command)}",
+            "message": f"Starting local collector script: {' '.join(command)}",
             "ts": _now_iso(),
         }
     )
@@ -793,13 +839,6 @@ async def _run_subprocess_collector(run: SentinelRun) -> None:
         await _finish_run(run, "failed", f"collector exited with code {exit_code}")
 
 
-def _agent_event_matches(run: SentinelRun, event: dict[str, Any]) -> bool:
-    if event.get("type") != "event" or event.get("event") != "agent":
-        return False
-    payload = event.get("payload") or {}
-    return payload.get("runId") == run.gateway_run_id
-
-
 def _emit_assistant_line(run: SentinelRun, text: str, ts: str) -> None:
     line = text.strip()
     if not line:
@@ -811,7 +850,7 @@ def _emit_assistant_line(run: SentinelRun, text: str, ts: str) -> None:
                 "type": "node_detail",
                 "node": "openclaw",
                 "display_name": "OpenClaw Agent",
-                "message": line.removeprefix("[STATUS]").strip() or "OpenClaw 阶段更新",
+                "message": line.removeprefix("[STATUS]").strip() or "OpenClaw 闃舵鏇存柊",
                 "ts": ts,
             }
         )
@@ -837,75 +876,119 @@ def _consume_assistant_delta(run: SentinelRun, text: str, ts: str) -> None:
         _emit_assistant_line(run, line, ts)
 
 
-def _summarize_tool_event(data: dict[str, Any]) -> str:
-    tool_name = (
-        data.get("tool")
-        or data.get("toolName")
-        or data.get("name")
-        or data.get("id")
-        or "tool"
-    )
-    phase = data.get("phase") or data.get("status") or data.get("event") or "update"
-    detail = data.get("summary") or data.get("message") or data.get("state")
-    if detail:
-        return f"{tool_name}: {phase} - {detail}"
-    return f"{tool_name}: {phase}"
+def _extract_response_text(event: dict[str, Any]) -> str:
+    response = event.get("response")
+    if not isinstance(response, dict):
+        return ""
+    output = response.get("output")
+    if not isinstance(output, list):
+        return ""
+    parts: list[str] = []
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "output_text":
+                text = part.get("text")
+                if isinstance(text, str) and text:
+                    parts.append(text)
+    return "".join(parts)
 
 
-def _translate_agent_event(run: SentinelRun, event: dict[str, Any]) -> None:
-    payload = event.get("payload") or {}
-    stream = payload.get("stream")
-    data = payload.get("data") or {}
-    ts = _ms_to_iso(payload.get("ts"))
+def _extract_response_error(event: dict[str, Any]) -> str:
+    response = event.get("response")
+    if not isinstance(response, dict):
+        return "OpenClaw response failed"
+    error = response.get("error")
+    if isinstance(error, dict) and error.get("message"):
+        return str(error["message"])
+    return f"OpenClaw response failed: {response.get('status') or 'unknown'}"
 
-    if stream == "lifecycle":
-        phase = data.get("phase")
-        if phase in {"end", "error"} and run.assistant_buffer.strip():
-            _emit_assistant_line(run, run.assistant_buffer, ts)
-            run.assistant_buffer = ""
-        message = "OpenClaw agent 已开始执行" if phase == "start" else "OpenClaw agent 执行结束，等待最终状态确认"
+
+def _translate_responses_event(run: SentinelRun, event: dict[str, Any], ts: str) -> None:
+    event_type = str(event.get("type") or "")
+    response = event.get("response")
+    if isinstance(response, dict) and response.get("id"):
+        run.gateway_run_id = str(response["id"])
+
+    if event_type == "response.created":
+        run.add_event(
+            {
+                "type": "node_detail",
+                "node": "openclaw",
+                "display_name": "OpenClaw Gateway",
+                "message": f"Created OpenClaw response: {run.gateway_run_id}",
+                "ts": ts,
+            }
+        )
+        return
+
+    if event_type == "response.in_progress":
         run.add_event(
             {
                 "type": "node_detail",
                 "node": "openclaw",
                 "display_name": "OpenClaw Agent",
-                "message": message,
+                "message": "OpenClaw agent started execution.",
                 "ts": ts,
             }
         )
         return
 
-    if stream == "assistant":
-        full_text = data.get("text")
-        if isinstance(full_text, str):
-            run.assistant_text = full_text
-        text = data.get("delta") or data.get("text")
-        if text:
-            _consume_assistant_delta(run, str(text), ts)
+    if event_type == "response.output_text.delta":
+        delta = event.get("delta")
+        if isinstance(delta, str) and delta:
+            _consume_assistant_delta(run, delta, ts)
         return
 
-    if stream == "tool":
-        summary = _summarize_tool_event(data)
+    if event_type == "response.output_text.done":
+        text = event.get("text")
+        if isinstance(text, str):
+            run.assistant_text = text
+        return
+
+    if event_type == "response.completed":
+        had_streamed_text = bool(run.assistant_buffer.strip() or run.assistant_text.strip())
+        response_text = _extract_response_text(event)
+        if response_text:
+            run.assistant_text = response_text
+            if not had_streamed_text:
+                for line in response_text.splitlines():
+                    _emit_assistant_line(run, line, ts)
+        if run.assistant_buffer.strip():
+            _emit_assistant_line(run, run.assistant_buffer, ts)
+            run.assistant_buffer = ""
         run.add_event(
             {
                 "type": "node_detail",
-                "node": "openclaw_tool",
-                "display_name": "OpenClaw Tool",
-                "message": summary,
+                "node": "openclaw",
+                "display_name": "OpenClaw Agent",
+                "message": "OpenClaw agent execution finished; waiting for final status.",
                 "ts": ts,
             }
         )
+        return
+
+
+    if event_type == "response.failed":
+        if run.assistant_buffer.strip():
+            _emit_assistant_line(run, run.assistant_buffer, ts)
+            run.assistant_buffer = ""
         run.add_event(
             {
-                "type": "node_verbose",
-                "node": "openclaw_tool",
-                "display_name": "OpenClaw Tool",
+                "type": "node_error_detail",
+                "node": "openclaw",
+                "display_name": "OpenClaw Agent",
+                "message": _extract_response_error(event),
                 "ts": ts,
-                "key": "tool",
-                "value": json.dumps(data, ensure_ascii=False),
-                "truncated": False,
             }
         )
+        return
+
+    if event_type == "[DONE]":
         return
 
     run.add_event(
@@ -914,31 +997,33 @@ def _translate_agent_event(run: SentinelRun, event: dict[str, Any]) -> None:
             "node": "openclaw",
             "display_name": "OpenClaw Agent",
             "ts": ts,
-            "key": str(stream or "event"),
-            "value": json.dumps(data, ensure_ascii=False),
+            "key": event_type or "event",
+            "value": json.dumps(event, ensure_ascii=False),
             "truncated": False,
         }
     )
 
 
+def _response_event_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    status = str(payload.get("status") or "").lower()
+    if status == "failed":
+        return {"type": "response.failed", "response": payload}
+    return {"type": "response.completed", "response": payload}
+
+
 async def _run_openclaw_collector(run: SentinelRun) -> None:
     connection = await _build_connection_snapshot()
     if connection["preferred_transport"] != "openclaw":
-        await _finish_run(run, "failed", "；".join(connection["issues"]) or "OpenClaw Gateway is not ready")
+        await _finish_run(run, "failed", "; ".join(connection["issues"]) or "OpenClaw Gateway is not ready")
         return
 
     settings = _load_openclaw_settings()
-    session_key = f"agent:{settings.agent_id}:saads-sentinel:{run.run_id}"
-    agent_timeout_ms = _parse_optional_timeout_ms("OPENCLAW_AGENT_TIMEOUT_MS", 3_600_000)
-    wait_timeout_ms = _parse_optional_timeout_ms(
-        "OPENCLAW_WAIT_TIMEOUT_MS",
-        agent_timeout_ms + 300_000 if agent_timeout_ms is not None else None,
-    )
-    wait_call_timeout_s = _parse_optional_timeout_s(
+    wait_timeout_ms = _parse_optional_timeout_ms("OPENCLAW_WAIT_TIMEOUT_MS", 3_900_000)
+    wait_timeout_s = _parse_optional_timeout_s(
         "OPENCLAW_WAIT_TIMEOUT_S",
-        (wait_timeout_ms / 1000.0 + 30.0) if wait_timeout_ms is not None else None,
+        wait_timeout_ms / 1000.0 if wait_timeout_ms is not None else None,
     )
-    run.session_key = session_key
+    run.session_key = None
     run.status = "running"
     run.add_event(
         {
@@ -955,7 +1040,7 @@ async def _run_openclaw_collector(run: SentinelRun) -> None:
             "type": "node_detail",
             "node": "openclaw",
             "display_name": "OpenClaw Gateway",
-            "message": f"连接 Gateway：{settings.gateway_http_url}",
+            "message": f"Connecting to OpenClaw HTTP Responses: {settings.gateway_responses_url}",
             "ts": _now_iso(),
         }
     )
@@ -965,106 +1050,70 @@ async def _run_openclaw_collector(run: SentinelRun) -> None:
             "node": "openclaw",
             "display_name": "OpenClaw Gateway",
             "message": (
-                "Agent 超时覆盖："
+                "HTTP Responses compatibility mode: non-streaming completion request; wait timeout="
                 + (
-                    f"{_format_duration(agent_timeout_ms / 1000)}"
-                    if agent_timeout_ms is not None
-                    else "关闭（使用 OpenClaw 默认配置）"
-                )
-                + "；等待超时："
-                + (
-                    f"{_format_duration(wait_timeout_ms / 1000)}"
+                    f"{_format_duration(wait_timeout_s)}"
                     if wait_timeout_ms is not None
-                    else "不限制"
+                    else "unbounded"
                 )
+                + "; cancel is local best-effort termination."
             ),
             "ts": _now_iso(),
         }
     )
 
-    abort_sent = False
     try:
-        async with OpenClawGatewaySession(settings) as session:
-            health = await session.call("health", {}, timeout=10.0)
+        async with OpenClawResponsesClient(settings) as client:
             run.add_event(
                 {
                     "type": "node_detail",
                     "node": "openclaw",
                     "display_name": "OpenClaw Gateway",
-                    "message": f"Gateway 就绪，protocol={session.protocol}，defaultAgent={health.get('defaultAgentId')}",
+                    "message": f"Responses API ready; agent={settings.agent_id}",
                     "ts": _now_iso(),
                 }
             )
-
-            agent_params: dict[str, Any] = {
-                "agentId": settings.agent_id,
-                "sessionKey": session_key,
-                "message": _build_openclaw_message(run.mode),
-                "deliver": False,
-                "label": f"SAADS Sentinel {run.mode}",
-                "idempotencyKey": str(uuid.uuid4()),
-            }
-            if agent_timeout_ms is not None:
-                agent_params["timeout"] = agent_timeout_ms
-
-            agent_payload = await session.call("agent", agent_params, timeout=20.0)
-            run.gateway_run_id = str(agent_payload.get("runId"))
-            run.add_event(
-                {
-                    "type": "node_detail",
-                    "node": "openclaw",
-                    "display_name": "OpenClaw Gateway",
-                    "message": f"已提交 agent run：{run.gateway_run_id}",
-                    "ts": _now_iso(),
-                }
+            response_task = asyncio.create_task(
+                client.complete_response(
+                    agent_id=settings.agent_id,
+                    message=_build_openclaw_message(run.mode, settings.workspace_root),
+                )
             )
-
-            wait_params: dict[str, Any] = {"runId": run.gateway_run_id}
-            if wait_timeout_ms is not None:
-                wait_params["timeoutMs"] = wait_timeout_ms
-
-            wait_task = asyncio.create_task(
-                session.call("agent.wait", wait_params, timeout=wait_call_timeout_s)
-            )
-
-            final_payload: dict[str, Any] | None = None
             loop_started_at = asyncio.get_running_loop().time()
             next_progress_ping = loop_started_at + 30.0
-            while final_payload is None:
-                if wait_task.done():
-                    final_payload = await wait_task
-                    break
+            deadline = (
+                loop_started_at + wait_timeout_s
+                if wait_timeout_s is not None
+                else None
+            )
 
-                if run.cancel_requested and not abort_sent and run.gateway_run_id:
-                    abort_sent = True
-                    try:
-                        await session.call(
-                            "chat.abort",
-                            {"sessionKey": session_key, "runId": run.gateway_run_id},
-                            timeout=10.0,
-                        )
-                        run.add_event(
-                            {
-                                "type": "node_detail",
-                                "node": "openclaw",
-                                "display_name": "OpenClaw Gateway",
-                                "message": "已向 OpenClaw 发送取消请求",
-                                "ts": _now_iso(),
-                            }
-                        )
-                    except Exception as exc:
-                        run.add_event(
-                            {
-                                "type": "node_error_detail",
-                                "node": "openclaw",
-                                "display_name": "OpenClaw Gateway",
-                                "message": f"取消请求失败：{exc}",
-                                "ts": _now_iso(),
-                            }
-                        )
+            while True:
+                if run.cancel_requested:
+                    response_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await response_task
+                    run.add_event(
+                        {
+                            "type": "node_detail",
+                            "node": "openclaw",
+                            "display_name": "OpenClaw Gateway",
+                            "message": "Cancelled local OpenClaw wait task.",
+                            "ts": _now_iso(),
+                        }
+                    )
+                    await _finish_run(run, "cancelled")
+                    return
+
+                if deadline is not None and asyncio.get_running_loop().time() >= deadline:
+                    response_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await response_task
+                    raise OpenClawResponsesError(
+                        f"/v1/responses timed out after {wait_timeout_s:.0f}s"
+                    )
 
                 try:
-                    event = await session.next_event(timeout=1.0)
+                    payload = await asyncio.wait_for(asyncio.shield(response_task), timeout=1.0)
                 except asyncio.TimeoutError:
                     now = asyncio.get_running_loop().time()
                     if now >= next_progress_ping:
@@ -1073,26 +1122,26 @@ async def _run_openclaw_collector(run: SentinelRun) -> None:
                                 "type": "node_detail",
                                 "node": "openclaw",
                                 "display_name": "OpenClaw Agent",
-                                "message": f"仍在执行，已运行 {_format_duration(now - loop_started_at)}，等待下一条进度或结果",
+                                "message": f"Still running; elapsed {_format_duration(now - loop_started_at)}; waiting for final result.",
                                 "ts": _now_iso(),
                             }
                         )
                         next_progress_ping = now + 30.0
                     continue
+                break
+                break
 
-                if event.get("event") == "_connection_closed" and final_payload is None:
-                    raise OpenClawGatewayError("gateway connection closed before run finished")
-                if _agent_event_matches(run, event):
-                    _translate_agent_event(run, event)
-                    next_progress_ping = asyncio.get_running_loop().time() + 30.0
+            _translate_responses_event(run, _response_event_from_payload(payload), _now_iso())
+            if run.assistant_buffer.strip():
+                _emit_assistant_line(run, run.assistant_buffer, _now_iso())
+                run.assistant_buffer = ""
 
-            status = str(final_payload.get("status") or "").lower() if final_payload else ""
-            if run.cancel_requested or status in {"aborted", "cancelled", "canceled"}:
-                await _finish_run(run, "cancelled")
-            elif status == "ok":
+            if str(payload.get("status") or "").lower() == "failed":
+                await _finish_run(run, "failed", _extract_response_error({"response": payload}))
+            elif run.assistant_text.strip():
                 await _finish_run(run, "succeeded")
             else:
-                await _finish_run(run, "failed", f"OpenClaw agent ended with status: {status or 'unknown'}")
+                await _finish_run(run, "failed", "OpenClaw response did not include assistant output")
     except asyncio.CancelledError:
         run.cancel_requested = True
         raise
@@ -1275,7 +1324,7 @@ async def start_run(body: SentinelRunRequest) -> dict[str, Any]:
         if connection["preferred_transport"] != "openclaw":
             raise HTTPException(
                 status_code=503,
-                detail="；".join(connection["issues"]) or "OpenClaw Gateway is not ready",
+                detail="; ".join(connection["issues"]) or "OpenClaw Gateway is not ready",
             )
 
     run = await _register_run(body.mode, transport)
@@ -1328,7 +1377,7 @@ async def cancel_run(run_id: str) -> dict[str, Any]:
             "type": "node_detail",
             "node": "sentinel",
             "display_name": "Sentinel",
-            "message": "收到取消请求",
+            "message": "鏀跺埌鍙栨秷璇锋眰",
             "ts": _now_iso(),
         }
     )
@@ -1383,7 +1432,7 @@ async def stream_logs(
                                 {
                                     "type": "node_verbose",
                                     "node": "sentinel_memory",
-                                    "display_name": "历史日志",
+                                    "display_name": "鍘嗗彶鏃ュ織",
                                     "ts": _now_iso(),
                                     "key": "memory",
                                     "value": line,
@@ -1408,3 +1457,4 @@ async def stream_logs(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+

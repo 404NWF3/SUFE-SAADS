@@ -15,10 +15,7 @@ function WpNavItem({ wpId, code, label }: { wpId: string; code: string; label: s
   const status = data?.status ?? "pending"
 
   return (
-    <Link
-      href={`/dashboard/${wpId}`}
-      className={`${styles.item} ${isActive ? styles.itemActive : ""}`}
-    >
+    <Link href={`/dashboard/${wpId}`} className={`${styles.item} ${isActive ? styles.itemActive : ""}`}>
       <StatusDot status={status} size="sm" />
       <span>{label}</span>
       <span className={styles.itemCode}>{code}</span>
@@ -27,23 +24,12 @@ function WpNavItem({ wpId, code, label }: { wpId: string; code: string; label: s
 }
 
 export function DashboardSidebar() {
-  const pathname = usePathname()
-  const isOverview = pathname === "/dashboard"
-
   return (
     <nav className={styles.nav} aria-label="Dashboard 导航">
       <div className={styles.logo}>
         <div className={styles.logoText}>SAADS</div>
         <div className={styles.logoSub}>运维控制台</div>
       </div>
-
-      <Link
-        href="/dashboard"
-        className={`${styles.item} ${isOverview ? styles.itemActive : ""}`}
-      >
-        <span style={{ fontSize: "0.9em" }}>◉</span>
-        <span>总览</span>
-      </Link>
 
       <div className={styles.sectionLabel}>智能体</div>
 

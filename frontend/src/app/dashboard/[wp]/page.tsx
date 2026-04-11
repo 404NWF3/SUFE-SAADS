@@ -3,8 +3,9 @@ import { AlertPanel } from "@/components/dashboard/AlertPanel"
 import { DebugControlPanel } from "@/components/dashboard/DebugControlPanel"
 import { LogViewer } from "@/components/dashboard/LogViewer"
 import { MetricsPanel } from "@/components/dashboard/MetricsPanel"
-import { SentinelControlPanel } from "@/components/dashboard/SentinelControlPanel"
+import { SentinelDashboardContent } from "@/components/dashboard/SentinelDashboardContent"
 import { Wp11MetricsPanel } from "@/components/dashboard/Wp11MetricsPanel"
+import { Wp12DashboardContent } from "@/components/dashboard/Wp12DashboardContent"
 import { WpDetailHeader } from "@/components/dashboard/WpDetailHeader"
 import { findWp, SORTED_WP_REGISTRY } from "@/lib/wp-registry"
 import styles from "./page.module.css"
@@ -42,7 +43,7 @@ export default async function WpDetailPage({
     return (
       <div className={styles.notFound}>
         <p className={styles.notFoundTitle}>智能体 &quot;{wpId}&quot; 未找到</p>
-        <p>请检查 URL 或返回总览页面</p>
+        <p>请检查 URL 或返回控制台入口</p>
       </div>
     )
   }
@@ -68,18 +69,34 @@ export default async function WpDetailPage({
     )
   }
 
+  if (wp.id === "sentinel") {
+    return (
+      <div className={styles.page}>
+        <WpDetailHeader wp={wp} />
+        <SentinelDashboardContent wpId={wp.id} />
+      </div>
+    )
+  }
+
+  if (wp.id === "wp12") {
+    return (
+      <div className={styles.page}>
+        <WpDetailHeader wp={wp} />
+        <Wp12DashboardContent wpId={wp.id} />
+      </div>
+    )
+  }
+
   return (
     <div className={styles.page}>
       <WpDetailHeader wp={wp} />
 
       <div className={styles.body}>
         <MetricsPanel wp={wp} />
-
         <LogViewer streamUrl={wp.logStream} height={320} />
 
         <div className={styles.twoCol}>
           <AlertPanel wpId={wp.id} title="WP 告警" />
-          {wp.id === "sentinel" && <SentinelControlPanel />}
         </div>
       </div>
     </div>
