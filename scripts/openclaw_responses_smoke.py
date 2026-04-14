@@ -3,8 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
-import uuid
 from pathlib import Path
 from typing import Any
 
@@ -54,80 +52,56 @@ def probe_models(client: httpx.Client, gateway_url: str, token: str) -> list[str
     return [str(item["id"]) for item in data if isinstance(item, dict) and item.get("id")]
 
 
-def flush_event(data_lines: list[str]) -> dict[str, Any] | str | None:
-    if not data_lines:
-        return None
-    raw = "\n".join(data_lines)
-    data_lines.clear()
-    if raw == "[DONE]":
-        return raw
-    return json.loads(raw)
+def extract_output_text(payload: dict[str, Any]) -> str:
+    direct_text = payload.get("output_text")
+    if isinstance(direct_text, str) and direct_text.strip():
+        return direct_text.strip()
+
+    output = payload.get("output")
+    if not isinstance(output, list):
+        return ""
+
+    parts: list[str] = []
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "output_text":
+                text = part.get("text")
+                if isinstance(text, str) and text:
+                    parts.append(text)
+    return "\n".join(parts).strip()
 
 
-def stream_response(
+def complete_response(
     client: httpx.Client,
     *,
     gateway_url: str,
     token: str,
     agent_id: str,
-    session_key: str,
     prompt: str,
-) -> str:
-    final_text = ""
-    with client.stream(
-        "POST",
+) -> dict[str, Any]:
+    response = client.post(
         f"{gateway_url.rstrip('/')}/v1/responses",
         headers={
             "Authorization": f"Bearer {token}",
-            "Accept": "text/event-stream",
             "Content-Type": "application/json",
             "x-openclaw-agent-id": agent_id,
-            "x-openclaw-session-key": session_key,
         },
         json={
             "model": "openclaw",
-            "stream": True,
             "input": prompt,
         },
-        timeout=httpx.Timeout(30.0, read=120.0),
-    ) as response:
-        response.raise_for_status()
-        data_lines: list[str] = []
-        for raw_line in response.iter_lines():
-            line = raw_line.rstrip("\r")
-            if not line:
-                event = flush_event(data_lines)
-                if event is None:
-                    continue
-                if event == "[DONE]":
-                    print("[DONE]")
-                    break
-                event_type = str(event.get("type") or "")
-                print(f"event={event_type}")
-                if event_type == "response.output_text.delta":
-                    delta = str(event.get("delta") or "")
-                    if delta:
-                        sys.stdout.write(delta)
-                        sys.stdout.flush()
-                elif event_type == "response.output_text.done":
-                    final_text = str(event.get("text") or final_text)
-                    print()
-                elif event_type == "response.completed":
-                    response_payload = event.get("response") or {}
-                    output = response_payload.get("output") or []
-                    for item in output:
-                        if not isinstance(item, dict):
-                            continue
-                        content = item.get("content") or []
-                        for part in content:
-                            if isinstance(part, dict) and part.get("type") == "output_text":
-                                final_text = str(part.get("text") or final_text)
-                continue
-            if line.startswith(":"):
-                continue
-            if line.startswith("data:"):
-                data_lines.append(line[5:].lstrip())
-    return final_text
+        timeout=httpx.Timeout(30.0, read=300.0),
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"/v1/responses returned unexpected payload: {payload!r}")
+    return payload
 
 
 def main() -> int:
@@ -140,34 +114,39 @@ def main() -> int:
         default="请只回复一行：OPENCLAW_FLOW_OK",
         help="Prompt sent to OpenClaw",
     )
-    parser.add_argument("--session-key", default=None, help="Optional explicit session key")
+    parser.add_argument(
+        "--session-key",
+        default=None,
+        help="Compatibility flag only. The current smoke test does not force an explicit session key.",
+    )
     args = parser.parse_args()
 
     config_path = Path(args.config).expanduser()
     config = load_openclaw_config(config_path)
     gateway_url = args.gateway_url or derive_gateway_url(config) or DEFAULT_GATEWAY_URL
     token = resolve_token(config)
-    session_key = args.session_key or f"smoke:{args.agent_id}:{uuid.uuid4().hex[:8]}"
 
     print(f"config={config_path}")
     print(f"gateway_url={gateway_url}")
     print(f"agent_id={args.agent_id}")
-    print(f"session_key={session_key}")
+    if args.session_key:
+        print("session_key=ignored-by-current-smoke-test")
 
     with httpx.Client() as client:
         model_ids = probe_models(client, gateway_url, token)
         print("models=", ", ".join(model_ids))
-        print("stream_start")
-        final_text = stream_response(
+        print("response_start")
+        payload = complete_response(
             client,
             gateway_url=gateway_url,
             token=token,
             agent_id=args.agent_id,
-            session_key=session_key,
             prompt=args.prompt,
         )
-        print("\nstream_end")
-        print(f"final_text={final_text}")
+        print("response_end")
+        print(f"response_id={payload.get('id')}")
+        print(f"status={payload.get('status')}")
+        print(f"final_text={extract_output_text(payload)}")
     return 0
 
 
