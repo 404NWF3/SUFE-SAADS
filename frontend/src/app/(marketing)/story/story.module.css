@@ -221,33 +221,6 @@
   font-family: var(--font-serif);
 }
 
-.openingStats {
-  display: flex;
-  gap: clamp(2.5rem, 6vw, 6rem);
-  margin-top: clamp(2.5rem, 5vw, 5rem);
-  padding-top: clamp(2rem, 4vw, 4rem);
-  border-top: 1px solid var(--line);
-}
-
-.openingStat {
-  text-align: center;
-}
-
-.openingStatNum {
-  font-family: var(--font-serif);
-  font-size: clamp(2rem, 3vw, 2.8rem);
-  letter-spacing: -0.03em;
-  color: var(--text);
-  line-height: 1;
-}
-
-.openingStatLabel {
-  font-size: 0.8rem;
-  color: var(--text-soft);
-  margin-top: 0.35rem;
-  line-height: 1.4;
-}
-
 .scrollHint {
   display: flex;
   flex-direction: column;
@@ -274,6 +247,7 @@
     transform: translateY(6px);
   }
 }
+
 
 /* ── Slide 1: Social Value — threat cards ───────────────────────────────── */
 .threatGrid {
@@ -640,133 +614,6 @@
   color: var(--status-warning);
 }
 
-/* ── Slide 5: Sandbox ───────────────────────────────────────────────────── */
-.sandboxFlow {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: var(--space-5);
-}
-
-.sandboxStep {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.65rem 0.9rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--line);
-  background: rgba(255, 253, 249, 0.85);
-  font-size: 0.88rem;
-}
-
-.sandboxArrow {
-  display: flex;
-  justify-content: center;
-  font-size: 0.8rem;
-  color: rgba(160, 106, 67, 0.4);
-  height: 0.5rem;
-  line-height: 1;
-}
-
-.sandboxStepIcon {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-xs);
-  background: var(--accent-soft);
-  display: grid;
-  place-items: center;
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: var(--accent);
-  flex-shrink: 0;
-}
-
-.sandboxStepLabel {
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 0.1rem;
-  font-size: 0.88rem;
-}
-
-.sandboxStepSub {
-  font-size: 0.78rem;
-  color: var(--text-soft);
-}
-
-.dimensionList {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.4rem 0.75rem;
-}
-
-.dimensionItem {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  font-size: 0.82rem;
-  color: var(--text-soft);
-  padding: 0.25rem 0;
-}
-
-.dimensionItem::before {
-  content: "";
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-  opacity: 0.55;
-  flex-shrink: 0;
-}
-
-/* ── Slide 6: Model comparison ──────────────────────────────────────────── */
-.modelTable {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.86rem;
-}
-
-.modelTable thead th {
-  text-align: left;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  padding: 0.6rem 0.85rem;
-  border-bottom: 1px solid var(--line-strong);
-}
-
-.modelTable tbody td {
-  padding: 0.6rem 0.85rem;
-  color: var(--text-soft);
-  border-bottom: 1px solid var(--line);
-  vertical-align: middle;
-}
-
-.modelTable tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.modelRowHighlight td {
-  background: rgba(45, 110, 78, 0.06);
-  font-weight: 600;
-  color: var(--text);
-}
-
-.modelRowHighlight td:first-child {
-  border-left: 3px solid var(--status-running);
-}
-
-.modelScore {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.modelScoreTop {
-  color: var(--status-running);
-}
-
 /* ── Slide 7: Closing ───────────────────────────────────────────────────── */
 .closingInner {
   max-width: 920px;
@@ -952,11 +799,6 @@
     display: none;
   }
 
-  .openingStats {
-    flex-direction: column;
-    gap: 1.5rem;
-  }
-
   .compareGrid {
     grid-template-columns: 1fr;
   }
@@ -965,9 +807,6 @@
     grid-template-columns: 1fr;
   }
 
-  .dimensionList {
-    grid-template-columns: 1fr;
-  }
 
   .miniPipeline {
     flex-direction: column;

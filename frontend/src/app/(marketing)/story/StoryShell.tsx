@@ -9,7 +9,7 @@ import styles from "./story.module.css"
    Static data constants
    ───────────────────────────────────────────────────────────────────────────── */
 
-const SLIDE_COUNT = 8
+const SLIDE_COUNT = 6
 
 const SLIDE_TITLES = [
   "开场",
@@ -17,8 +17,6 @@ const SLIDE_TITLES = [
   "设计思想",
   "WP1-1",
   "WP1-2",
-  "WP1-3",
-  "WP1-4",
   "攻防闭环",
 ] as const
 
@@ -35,14 +33,6 @@ const OWASP_ITEMS = [
   { id: "LLM10", name: "Model Theft", pct: 100 },
 ] as const
 
-const MODEL_ROWS = [
-  { method: "Isolation Forest", type: "集成方法", f1: "72.1%", auroc: "74.8%", top: false },
-  { method: "LOF", type: "密度估计", f1: "68.4%", auroc: "71.2%", top: false },
-  { method: "OCSVM", type: "支持向量", f1: "63.7%", auroc: "67.5%", top: false },
-  { method: "DevNet", type: "深度学习", f1: "81.3%", auroc: "84.6%", top: false },
-  { method: "PatchCore", type: "表示学习", f1: "85.7%", auroc: "88.3%", top: false },
-  { method: "SAADS-WP14", type: "本系统", f1: "97.3%", auroc: "98.1%", top: true },
-] as const
 
 const DATA_SOURCES = [
   { name: "NVD / NIST", type: "CVE 数据库", freq: "实时", count: "1,200+", status: "running" },
@@ -64,23 +54,6 @@ const DATA_SOURCES = [
   { name: "暗网监控", type: "零日情报", freq: "实时", count: "—", status: "pending" },
 ] as const
 
-const SANDBOX_STEPS = [
-  { icon: "①", label: "WP1-2 测试脚本", sub: "接收自动生成的测试用例集合" },
-  { icon: "②", label: "虚拟化克隆", sub: "隔离复制用户 AI 系统环境" },
-  { icon: "③", label: "安全沙盒执行", sub: "在独立容器中运行全部测试" },
-  { icon: "④", label: "异常数据采集", sub: "记录行为偏差，输出标注数据集" },
-] as const
-
-const DIMENSION_ITEMS = [
-  "输入输出异常",
-  "模型行为偏差",
-  "资源占用异常",
-  "上下文污染",
-  "越权操作",
-  "幻觉频率",
-  "拒绝率异常",
-  "响应延迟分布",
-] as const
 
 const THREATS = [
   { code: "LLM01", name: "提示词注入", risk: "critical", riskLabel: "高危" },
@@ -145,39 +118,13 @@ function Slide0Opening() {
             都是一个新的攻击面。
           </h1>
 
-          <div className={styles.openingStats}>
-            <div className={styles.openingStat}>
-              <div className={styles.openingStatNum}>10,000+</div>
-              <div className={styles.openingStatLabel}>
-                2024 年新增
-                <br />
-                AI 相关漏洞
-              </div>
-            </div>
-            <div className={styles.openingStat}>
-              <div className={styles.openingStatNum}>47%</div>
-              <div className={styles.openingStatLabel}>
-                企业已部署 LLM
-                <br />
-                尚无专项防护
-              </div>
-            </div>
-            <div className={styles.openingStat}>
-              <div className={styles.openingStatNum}>2×</div>
-              <div className={styles.openingStatLabel}>
-                AI 攻击面年均
-                <br />
-                增速
-              </div>
-            </div>
-          </div>
-
           <div className={styles.scrollHint}>
             <span>向下探索</span>
             <span className={styles.scrollArrow} aria-hidden="true">
               ↓
             </span>
           </div>
+
         </div>
       </div>
     </SlideWrap>
@@ -464,152 +411,12 @@ function Slide4Wp12() {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   Slide 5 — WP1-3 沙盒模拟
-   ───────────────────────────────────────────────────────────────────────────── */
-
-function Slide5Wp13() {
-  return (
-    <SlideWrap index={5}>
-      <div className={styles.splitLayout}>
-        {/* Left track */}
-        <div className={styles.leftTrack}>
-          <p className={styles.slideEyebrow}>WP1-3 · 用户层 · 沙盒模拟智能体</p>
-          <h2 className={styles.slideH2}>
-            零风险验证，
-            <br />
-            真实威胁
-          </h2>
-          <p className={styles.slideLead}>
-            虚拟化克隆用户部署的 AI 系统，在完全隔离的沙盒环境中安全执行 WP1-2
-            生成的测试脚本，采集真实异常行为数据，为 WP1-4 检测模型训练提供标注数据集。
-          </p>
-          <p className={styles.slideLead} style={{ marginBottom: 0 }}>
-            用户系统全程无风险——攻击行为仅在虚拟克隆副本中发生。
-          </p>
-        </div>
-
-        {/* Right track */}
-        <div className={styles.rightTrack}>
-          <p className={styles.rightHeader}>沙盒执行流程</p>
-          <div className={styles.sandboxFlow}>
-            {SANDBOX_STEPS.map((step, i) => (
-              <div key={step.icon}>
-                <div className={styles.sandboxStep}>
-                  <div className={styles.sandboxStepIcon}>{step.icon}</div>
-                  <div>
-                    <div className={styles.sandboxStepLabel}>{step.label}</div>
-                    <div className={styles.sandboxStepSub}>{step.sub}</div>
-                  </div>
-                </div>
-                {i < SANDBOX_STEPS.length - 1 && (
-                  <div className={styles.sandboxArrow} aria-hidden="true">
-                    ↓
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <p className={styles.rightHeader}>数据采集维度</p>
-          <div className={styles.dimensionList}>
-            {DIMENSION_ITEMS.map((dim) => (
-              <div key={dim} className={styles.dimensionItem}>
-                {dim}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </SlideWrap>
-  )
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   Slide 6 — WP1-4 异常检测
-   ───────────────────────────────────────────────────────────────────────────── */
-
-function Slide6Wp14() {
-  return (
-    <SlideWrap index={6}>
-      <div className={styles.splitLayout}>
-        {/* Left track */}
-        <div className={styles.leftTrack}>
-          <p className={styles.slideEyebrow}>WP1-4 · 用户层 · 异常检测智能体</p>
-          <h2 className={styles.slideH2}>
-            从数据到防御，
-            <br />
-            模型即力量
-          </h2>
-          <p className={styles.slideLead}>
-            将 WP1-3 采集的沙盒数据转化为可部署的异常检测模型。
-            基于 ADBench 基准评测框架，在半监督场景下持续迭代优化，
-            支持在线推理与防御策略输出。
-          </p>
-          <div className={styles.flowSteps}>
-            {[
-              "接收 WP1-3 标注异常数据集",
-              "多方法对比实验（ADBench 框架）",
-              "选择最优检测模型，持续迭代",
-              "输出可部署检测器与防御建议",
-            ].map((step, i) => (
-              <div key={i} className={`${styles.flowStep} ${i === 3 ? styles.flowStepActive : ""}`}>
-                <span className={styles.flowStepNum}>{i + 1}</span>
-                <span className={styles.flowStepText}>{step}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Right track */}
-        <div className={styles.rightTrack}>
-          <p className={styles.rightHeader}>异常检测方法对比 (ADBench 基准)</p>
-          <div className={styles.tableWrapper}>
-            <table className={styles.modelTable}>
-              <thead>
-                <tr>
-                  <th>检测方法</th>
-                  <th>类型</th>
-                  <th>F1 Score</th>
-                  <th>AUROC</th>
-                </tr>
-              </thead>
-              <tbody>
-                {MODEL_ROWS.map((row) => (
-                  <tr key={row.method} className={row.top ? styles.modelRowHighlight : ""}>
-                    <td>{row.method}</td>
-                    <td>{row.type}</td>
-                    <td>
-                      <span
-                        className={`${styles.modelScore} ${row.top ? styles.modelScoreTop : ""}`}
-                      >
-                        {row.f1}
-                      </span>
-                    </td>
-                    <td>
-                      <span
-                        className={`${styles.modelScore} ${row.top ? styles.modelScoreTop : ""}`}
-                      >
-                        {row.auroc}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </SlideWrap>
-  )
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
    Slide 7 — 攻防闭环（Closing）
    ───────────────────────────────────────────────────────────────────────────── */
 
 function Slide7Closing() {
   return (
-    <SlideWrap index={7}>
+    <SlideWrap index={5}>
       <div className={styles.fullLayout}>
         <div className={styles.closingInner}>
           <p className={styles.slideEyebrow} style={{ alignSelf: "center" }}>
@@ -785,8 +592,6 @@ export function StoryShell() {
         <Slide2Philosophy />
         <Slide3Wp11 />
         <Slide4Wp12 />
-        <Slide5Wp13 />
-        <Slide6Wp14 />
         <Slide7Closing />
       </div>
 

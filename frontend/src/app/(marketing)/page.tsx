@@ -1,6 +1,5 @@
 import type { Metadata } from "next"
 import { HeroSection } from "@/components/sections/HeroSection"
-import { KpiStrip } from "@/components/sections/KpiStrip"
 import { ArchitectureFlow } from "@/components/sections/ArchitectureFlow"
 import { CtaBand } from "@/components/sections/CtaBand"
 
@@ -14,7 +13,6 @@ export default function HomePage() {
   return (
     <>
       <HeroSection />
-      <KpiStrip />
       <ArchitectureFlow />
       <CtaBand />
     </>
